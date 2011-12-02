@@ -67,39 +67,6 @@ struct GuestAgentInfo *qmp_guest_info(Error **err)
 
 void qmp_guest_shutdown(bool has_mode, const char *mode, Error **err)
 {
-    int ret;
-    const char *shutdown_flag;
-
-    slog("guest-shutdown called, mode: %s", mode);
-    if (!has_mode || strcmp(mode, "powerdown") == 0) {
-        shutdown_flag = "-P";
-    } else if (strcmp(mode, "halt") == 0) {
-        shutdown_flag = "-H";
-    } else if (strcmp(mode, "reboot") == 0) {
-        shutdown_flag = "-r";
-    } else {
-        error_set(err, QERR_INVALID_PARAMETER_VALUE, "mode",
-                  "halt|powerdown|reboot");
-        return;
-    }
-
-    ret = fork();
-    if (ret == 0) {
-        /* child, start the shutdown */
-        setsid();
-        fclose(stdin);
-        fclose(stdout);
-        fclose(stderr);
-
-        ret = execl("/sbin/shutdown", "shutdown", shutdown_flag, "+0",
-                    "hypervisor initiated shutdown", (char*)NULL);
-        if (ret) {
-            slog("guest-shutdown failed: %s", strerror(errno));
-        }
-        exit(!!ret);
-    } else if (ret < 0) {
-        error_set(err, QERR_UNDEFINED_ERROR);
-    }
 }
 
 typedef struct GuestFileHandle {
@@ -152,6 +119,7 @@ int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, E
         return -1;
     }
 
+#ifndef _WIN32
     /* set fd non-blocking to avoid common use cases (like reading from a
      * named pipe) from hanging the agent
      */
@@ -163,6 +131,7 @@ int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, E
         fclose(fh);
         return -1;
     }
+#endif
 
     guest_file_handle_add(fh);
     slog("guest-file-open, handle: %d", fd);

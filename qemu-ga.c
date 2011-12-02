@@ -14,9 +14,12 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <getopt.h>
+#ifndef  _WIN32
 #include <termios.h>
 #include <syslog.h>
+#endif
 #include "qemu_socket.h"
 #include "json-streamer.h"
 #include "json-parser.h"
@@ -27,6 +30,14 @@
 #include "signal.h"
 #include "qerror.h"
 #include "error_int.h"
+
+#define _DEBUG 1
+
+#if _DEBUG
+#define DEBUG g_debug
+#else
+#define DEBUG do {} while (0)
+#endif
 
 #define QGA_VIRTIO_PATH_DEFAULT "/dev/virtio-ports/org.qemu.guest_agent.0"
 #define QGA_PIDFILE_DEFAULT "/var/run/qemu-ga.pid"
@@ -49,6 +60,7 @@ struct GAState {
 
 static struct GAState *ga_state;
 
+#ifndef _WIN32
 static void quit_handler(int sig)
 {
     g_debug("received signal num %d, quitting", sig);
@@ -76,6 +88,7 @@ static void register_signal_handlers(void)
         g_error("error configuring signal handler: %s", strerror(errno));
     }
 }
+#endif
 
 static void usage(const char *cmd)
 {
@@ -147,7 +160,9 @@ static void ga_log(const gchar *domain, GLogLevelFlags level,
 
     level &= G_LOG_LEVEL_MASK;
     if (domain && strcmp(domain, "syslog") == 0) {
+#ifndef _WIN32
         syslog(LOG_INFO, "%s: %s", level_str, msg);
+#endif
     } else if (level & s->log_level) {
         g_get_current_time(&time);
         fprintf(s->log_file,
@@ -156,13 +171,15 @@ static void ga_log(const gchar *domain, GLogLevelFlags level,
     }
 }
 
+#ifndef _WIN32
 static void become_daemon(const char *pidfile)
 {
     pid_t pid, sid;
     int pidfd;
-    char *pidstr = NULL;
+    char pidstr[32];
 
     pid = fork();
+
     if (pid < 0) {
         exit(EXIT_FAILURE);
     }
@@ -176,12 +193,11 @@ static void become_daemon(const char *pidfile)
         exit(EXIT_FAILURE);
     }
 
-    if (asprintf(&pidstr, "%d", getpid()) == -1) {
+    if (sprintf(pidstr, "%d", getpid()) == -1) {
         g_critical("Cannot allocate memory");
         goto fail;
     }
     if (write(pidfd, pidstr, strlen(pidstr)) != strlen(pidstr)) {
-        free(pidstr);
         g_critical("Failed to write pid file");
         goto fail;
     }
@@ -198,7 +214,6 @@ static void become_daemon(const char *pidfile)
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
-    free(pidstr);
     return;
 
 fail:
@@ -206,6 +221,7 @@ fail:
     g_critical("failed to daemonize");
     exit(EXIT_FAILURE);
 }
+#endif
 
 static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
                                  gsize count)
@@ -391,7 +407,12 @@ static int conn_channel_add(GAState *s, int fd)
     GError *err = NULL;
 
     g_assert(s && !s->conn_channel);
+#ifndef _WIN32
     conn_channel = g_io_channel_unix_new(fd);
+#else
+    DEBUG("win32 FDs ftw");
+    conn_channel = g_io_channel_win32_new_fd(fd);
+#endif
     g_assert(conn_channel);
     g_io_channel_set_encoding(conn_channel, NULL, &err);
     if (err != NULL) {
@@ -405,6 +426,7 @@ static int conn_channel_add(GAState *s, int fd)
     return 0;
 }
 
+#ifndef _WIN32
 static gboolean listen_channel_accept(GIOChannel *channel,
                                       GIOCondition condition, gpointer data)
 {
@@ -446,16 +468,21 @@ static int listen_channel_add(GAState *s, int listen_fd, bool new)
                    listen_channel_accept, s);
     return 0;
 }
+#endif
 
 /* cleanup state for closed connection/session, start accepting new
  * connections if we're in listening mode
  */
 static void conn_channel_close(GAState *s)
 {
+#ifndef _WIN32
     if (strcmp(s->method, "unix-listen") == 0) {
         g_io_channel_shutdown(s->conn_channel, true, NULL);
         listen_channel_add(s, 0, false);
     } else if (strcmp(s->method, "virtio-serial") == 0) {
+#else
+    if (strcmp(s->method, "virtio-serial") == 0) {
+#endif
         /* we spin on EOF for virtio-serial, so back off a bit. also,
          * dont close the connection in this case, it'll resume normal
          * operation when another process connects to host chardev
@@ -471,7 +498,9 @@ out_noclose:
 
 static void init_guest_agent(GAState *s)
 {
+#ifndef _WIN32
     struct termios tio;
+#endif
     int ret, fd;
 
     if (s->method == NULL) {
@@ -484,22 +513,39 @@ static void init_guest_agent(GAState *s)
             g_critical("must specify a path for this channel");
             exit(EXIT_FAILURE);
         }
+#ifndef _WIN32
         /* try the default path for the virtio-serial port */
         s->path = QGA_VIRTIO_PATH_DEFAULT;
+#else
+        s->path = get_vioserial_path();
+        if (s->path == NULL) {
+            g_critical("error opening virtio-serial channel");
+            exit(EXIT_FAILURE);
+        }
+        DEBUG("path: %s", s->path);
+#endif
     }
 
     if (strcmp(s->method, "virtio-serial") == 0) {
         s->virtio = true;
+#ifndef _WIN32
         fd = qemu_open(s->path, O_RDWR | O_NONBLOCK | O_ASYNC);
+#else
+        g_warning("windows shenanigans redux");
+        //fd = qemu_open(s->path, O_RDWR);
+        fd = g_open(s->path, O_RDWR, 0);
+#endif
         if (fd == -1) {
             g_critical("error opening channel: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
+        DEBUG("fd: %d", fd);
         ret = conn_channel_add(s, fd);
         if (ret) {
             g_critical("error adding channel to main loop");
             exit(EXIT_FAILURE);
         }
+#ifndef _WIN32
     } else if (strcmp(s->method, "isa-serial") == 0) {
         fd = qemu_open(s->path, O_RDWR | O_NOCTTY);
         if (fd == -1) {
@@ -537,6 +583,7 @@ static void init_guest_agent(GAState *s)
             g_critical("error binding/listening to specified socket");
             exit(EXIT_FAILURE);
         }
+#endif
     } else {
         g_critical("unsupported channel method/type: %s", s->method);
         exit(EXIT_FAILURE);
@@ -605,10 +652,12 @@ int main(int argc, char **argv)
         }
     }
 
+#ifndef _WIN32
     if (daemonize) {
         g_debug("starting daemon");
         become_daemon(pidfile);
     }
+#endif
 
     s = g_malloc0(sizeof(GAState));
     s->conn_channel = NULL;
@@ -626,7 +675,9 @@ int main(int argc, char **argv)
 
     module_call_init(MODULE_INIT_QAPI);
     init_guest_agent(ga_state);
+#ifndef _WIN32
     register_signal_handlers();
+#endif
 
     g_main_loop_run(ga_state->main_loop);
 
