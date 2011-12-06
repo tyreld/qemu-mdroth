@@ -340,6 +340,7 @@ static void guest_file_init(void)
     QTAILQ_INIT(&guest_file_state.filehandles);
 }
 
+
 /* linux-specific implementations. avoid this if at all possible. */
 #if defined(__linux__)
 
@@ -1090,4 +1091,5 @@ void ga_command_state_init(GAState *s, GACommandState *cs)
     ga_command_state_add(cs, NULL, guest_fsfreeze_cleanup);
 #endif
     ga_command_state_add(cs, guest_file_init, NULL);
+    ga_command_state_add(cs, guest_exec_init, NULL);
 }

@@ -206,7 +206,14 @@ $(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi-commands.py $(qapi-py)
 QGALIB_GEN=$(addprefix qga/qapi-generated/, qga-qapi-types.h qga-qapi-visit.h qga-qmp-commands.h)
 $(qga-obj-y) qemu-ga.o: $(QGALIB_GEN)
 
-qemu-ga$(EXESUF): $(qga-obj-y) libqemuutil.a libqemustub.a
+qemu-ga$(EXESUF): libqemuutil.a libqemustub.a
+	$(call LINK, $^)
+
+qemu-ga-exec$(EXESUF): LIBS= $(LIBS_QGA)
+qemu-ga-exec$(EXESUF): QEMU_CFLAGS += -I qga/qapi-generated
+qemu-ga-exec$(EXESUF): qemu-ga-exec.o libqemuutil.a libqemustub.a \
+	qga/guest-agent-command-state.o qga/qapi-generated/qga-qapi-types.o \
+   	qga/qapi-generated/qga-qapi-visit.o qga/qapi-generated/qga-qmp-marshal.o
 	$(call LINK, $^)
 
 clean:

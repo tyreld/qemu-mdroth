@@ -39,3 +39,5 @@ const char *ga_fsfreeze_hook(GAState *s);
 #ifndef _WIN32
 void reopen_fd_to_null(int fd);
 #endif
+
+void guest_exec_init(void);
