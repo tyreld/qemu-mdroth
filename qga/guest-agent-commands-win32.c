@@ -106,8 +106,10 @@ static GuestFileHandle *guest_file_handle_find(int64_t id)
 int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
 {
     FILE *fh;
-    int fd;
+    int fd = 0;
+#ifndef _WIN32
     int64_t ret = -1;
+#endif
 
     if (!has_mode) {
         mode = "r";
