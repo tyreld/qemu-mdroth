@@ -30,16 +30,15 @@
 #include "signal.h"
 #include "qerror.h"
 #include "error_int.h"
-
-#define _DEBUG 1
-
-#if _DEBUG
-#define DEBUG g_debug
-#else
-#define DEBUG do {} while (0)
+#ifdef _WIN32
+#include "qga/transport.h"
 #endif
 
+#ifndef _WIN32
 #define QGA_VIRTIO_PATH_DEFAULT "/dev/virtio-ports/org.qemu.guest_agent.0"
+#else
+#define QGA_VIRTIO_PATH_DEFAULT "\\\\.\\Global\\org.qemu.guest_agent.0"
+#endif
 #define QGA_PIDFILE_DEFAULT "/var/run/qemu-ga.pid"
 #define QGA_BAUDRATE_DEFAULT B38400 /* for isa-serial channels */
 #define QGA_TIMEOUT_DEFAULT 30*1000 /* ms */
@@ -56,6 +55,9 @@ struct GAState {
     GLogLevelFlags log_level;
     FILE *log_file;
     bool logging_enabled;
+#ifdef _WIN32
+    QgaChannel *qga_channel;
+#endif
 };
 
 static struct GAState *ga_state;
@@ -109,6 +111,8 @@ static void usage(const char *cmd)
 "Report bugs to <mdroth@linux.vnet.ibm.com>\n"
     , cmd, QGA_VERSION, QGA_VIRTIO_PATH_DEFAULT, QGA_PIDFILE_DEFAULT);
 }
+
+static int conn_channel_add(GAState *s, GIOChannel *chan);
 
 static void conn_channel_close(GAState *s);
 
@@ -234,7 +238,7 @@ static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
         status = g_io_channel_write_chars(channel, buf, count, &written, &err);
         g_debug("sending data, count: %d", (int)count);
         if (err != NULL) {
-            g_warning("error sending newline: %s", err->message);
+            g_warning("error issuing write to channel: %s", err->message);
             return err->code;
         }
         if (status == G_IO_STATUS_ERROR || status == G_IO_STATUS_EOF) {
@@ -249,14 +253,16 @@ static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
     return 0;
 }
 
-static int conn_channel_send_payload(GIOChannel *channel, QObject *payload)
+static int conn_channel_send_payload(GAState *s, QObject *payload)
 {
     int ret = 0;
     const char *buf;
     QString *payload_qstr;
     GError *err = NULL;
+    GIOStatus status;
+    GIOChannel *channel = s->conn_channel;
 
-    g_assert(payload && channel);
+    g_assert(payload);
 
     payload_qstr = qobject_to_json(payload);
     if (!payload_qstr) {
@@ -265,17 +271,29 @@ static int conn_channel_send_payload(GIOChannel *channel, QObject *payload)
 
     qstring_append_chr(payload_qstr, '\n');
     buf = qstring_get_str(payload_qstr);
+#ifndef _WIN32
     ret = conn_channel_send_buf(channel, buf, strlen(buf));
     if (ret) {
+        g_warning("error sending buffer: %d", ret);
         goto out_free;
     }
+#endif
 
-    g_io_channel_flush(channel, &err);
+    g_debug("starting flush...");
+#ifndef _WIN32
+    status = g_io_channel_flush(channel, &err);
+#else
+    status = qga_channel_write_all(s->qga_channel, buf, strlen(buf), NULL);
+#endif
     if (err != NULL) {
         g_warning("error flushing payload: %s", err->message);
         ret = err->code;
         goto out_free;
     }
+    if (status != G_IO_STATUS_NORMAL) {
+        g_warning("abnormal status reported while flushing");
+    }
+    g_debug("flush completed.");
 
 out_free:
     QDECREF(payload_qstr);
@@ -294,9 +312,9 @@ static void process_command(GAState *s, QDict *req)
     g_debug("processing command");
     rsp = qmp_dispatch(QOBJECT(req));
     if (rsp) {
-        ret = conn_channel_send_payload(s->conn_channel, rsp);
+        ret = conn_channel_send_payload(s, rsp);
         if (ret) {
-            g_warning("error sending payload: %s", strerror(ret));
+            g_warning("error sending payload: %d", ret);
         }
         qobject_decref(rsp);
     } else {
@@ -348,7 +366,7 @@ static void process_event(JSONMessageParser *parser, QList *tokens)
         }
         ret = conn_channel_send_payload(s->conn_channel, QOBJECT(qdict));
         if (ret) {
-            g_warning("error sending payload: %s", strerror(ret));
+            g_warning("error sending error msg payload, code: %d", ret);
         }
     }
 
@@ -359,12 +377,20 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
                                   gpointer data)
 {
     GAState *s = data;
-    gchar buf[1024];
     gsize count;
     GError *err = NULL;
-    memset(buf, 0, 1024);
-    GIOStatus status = g_io_channel_read_chars(channel, buf, 1024,
-                                               &count, &err);
+    GIOStatus status;
+    gchar *buf = NULL;
+    gchar buf_array[1024];
+
+    memset(buf_array, 0, 1024);
+    buf = &buf_array;
+#ifndef _WIN32
+    status = g_io_channel_read_chars(channel, buf, 1024, &count, &err);
+#else
+    //status = g_io_channel_read_line(channel, &buf, &count, NULL, &err);
+    status = qga_channel_read(s->qga_channel, buf, 1, &count);
+#endif
     if (err != NULL) {
         g_warning("error reading channel: %s", err->message);
         conn_channel_close(s);
@@ -372,12 +398,16 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
         return false;
     }
     switch (status) {
-    case G_IO_STATUS_ERROR:
-        g_warning("problem");
-        return false;
     case G_IO_STATUS_NORMAL:
         g_debug("read data, count: %d, data: %s", (int)count, buf);
         json_message_parser_feed(&s->parser, (char *)buf, (int)count);
+#ifdef _WIN32
+        g_free(buf);
+#endif
+        break;
+    case G_IO_STATUS_ERROR:
+        g_warning("status error");
+        /* fall through for w32 */
     case G_IO_STATUS_AGAIN:
         /* virtio causes us to spin here when no process is attached to
          * host-side chardev. sleep a bit to mitigate this
@@ -401,18 +431,16 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
     return true;
 }
 
-static int conn_channel_add(GAState *s, int fd)
+#ifdef _WIN32
+static gboolean qga_channel_read_cb(GIOCondition condition, gpointer data)
 {
-    GIOChannel *conn_channel;
-    GError *err = NULL;
-
-    g_assert(s && !s->conn_channel);
-#ifndef _WIN32
-    conn_channel = g_io_channel_unix_new(fd);
-#else
-    DEBUG("win32 FDs ftw");
-    conn_channel = g_io_channel_win32_new_fd(fd);
+    return conn_channel_read(NULL, condition, data);
+}
 #endif
+
+static int conn_channel_add(GAState *s, GIOChannel *conn_channel)
+{
+    GError *err = NULL;
     g_assert(conn_channel);
     g_io_channel_set_encoding(conn_channel, NULL, &err);
     if (err != NULL) {
@@ -420,10 +448,52 @@ static int conn_channel_add(GAState *s, int fd)
         g_error_free(err);
         return -1;
     }
+    g_io_channel_set_flags(conn_channel, G_IO_FLAG_NONBLOCK, &err);
+    if (err != NULL) {
+        g_warning("error setting channel to non-blocking: %s", err->message);
+        g_error_free(err);
+    }
     g_io_add_watch(conn_channel, G_IO_IN | G_IO_HUP,
                    conn_channel_read, s);
     s->conn_channel = conn_channel;
     return 0;
+}
+
+static int conn_channel_add_fd(GAState *s, int fd)
+{
+    GIOChannel *conn_channel;
+#ifdef _WIN32
+    QgaChannel *qga_channel;
+    int fake_fd;
+    GError *err = NULL;
+    guint written;
+    const char *str;
+    char buf[1024];
+#endif
+
+    g_assert(s && !s->conn_channel);
+#ifdef _WIN32
+    //unsetenv("G_IO_WIN32_DEBUG=0");
+    /*
+    fake_fd = g_open("temp.txt", O_RDWR | _O_BINARY | O_CREAT, S_IRWXU);
+    if (fake_fd == -1) {
+        g_warning("error create switcharoo: %s", strerror(errno));
+        return -1;
+    }
+    conn_channel = g_io_channel_win32_new_fd(fake_fd);
+    int ret = dup2(fd, fake_fd);
+    if (ret == -1) {
+        g_warning("dup2() error: %s", strerror(errno));
+        return -1;
+    }
+    */
+    qga_channel = qga_channel_new(fd, G_IO_IN | G_IO_HUP, qga_channel_read_cb, s);
+    s->qga_channel = qga_channel;
+    return 0;
+#else
+    conn_channel = g_io_channel_unix_new(fd);
+#endif
+    return conn_channel_add(s, conn_channel);
 }
 
 #ifndef _WIN32
@@ -444,7 +514,7 @@ static gboolean listen_channel_accept(GIOChannel *channel,
         goto out;
     }
     fcntl(conn_fd, F_SETFL, O_NONBLOCK);
-    ret = conn_channel_add(s, conn_fd);
+    ret = conn_channel_add_fd(s, conn_fd);
     if (ret) {
         g_warning("error setting up connection");
         goto out;
@@ -501,7 +571,9 @@ static void init_guest_agent(GAState *s)
 #ifndef _WIN32
     struct termios tio;
 #endif
-    int ret, fd;
+    int fd;
+    int ret;
+    //GIOChannel *chan;
 
     if (s->method == NULL) {
         /* try virtio-serial as our default */
@@ -513,34 +585,28 @@ static void init_guest_agent(GAState *s)
             g_critical("must specify a path for this channel");
             exit(EXIT_FAILURE);
         }
-#ifndef _WIN32
         /* try the default path for the virtio-serial port */
         s->path = QGA_VIRTIO_PATH_DEFAULT;
-#else
-        s->path = get_vioserial_path();
+        //s->path = get_vioserial_path();
         if (s->path == NULL) {
             g_critical("error opening virtio-serial channel");
             exit(EXIT_FAILURE);
         }
-        DEBUG("path: %s", s->path);
-#endif
+        g_debug("path: %s", s->path);
     }
 
     if (strcmp(s->method, "virtio-serial") == 0) {
         s->virtio = true;
 #ifndef _WIN32
         fd = qemu_open(s->path, O_RDWR | O_NONBLOCK | O_ASYNC);
-#else
-        g_warning("windows shenanigans redux");
-        //fd = qemu_open(s->path, O_RDWR);
-        fd = g_open(s->path, O_RDWR, 0);
-#endif
         if (fd == -1) {
             g_critical("error opening channel: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-        DEBUG("fd: %d", fd);
-        ret = conn_channel_add(s, fd);
+#else
+        fd = g_open(s->path, O_RDWR | _O_BINARY, 0);
+#endif
+        ret = conn_channel_add_fd(s, fd);
         if (ret) {
             g_critical("error adding channel to main loop");
             exit(EXIT_FAILURE);
@@ -568,7 +634,7 @@ static void init_guest_agent(GAState *s)
         /* flush everything waiting for read/xmit, it's garbage at this point */
         tcflush(fd, TCIFLUSH);
         tcsetattr(fd, TCSANOW, &tio);
-        ret = conn_channel_add(s, fd);
+        ret = conn_channel_add_fd(s, fd);
         if (ret) {
             g_error("error adding channel to main loop");
         }
