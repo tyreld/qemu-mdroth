@@ -112,7 +112,9 @@ static void usage(const char *cmd)
     , cmd, QGA_VERSION, QGA_VIRTIO_PATH_DEFAULT, QGA_PIDFILE_DEFAULT);
 }
 
+#ifndef _WIN32
 static int conn_channel_add(GAState *s, GIOChannel *chan);
+#endif
 
 static void conn_channel_close(GAState *s);
 
@@ -227,6 +229,7 @@ fail:
 }
 #endif
 
+#ifndef _WIN32
 static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
                                  gsize count)
 {
@@ -252,6 +255,7 @@ static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
 
     return 0;
 }
+#endif
 
 static int conn_channel_send_payload(GAState *s, QObject *payload)
 {
@@ -260,7 +264,6 @@ static int conn_channel_send_payload(GAState *s, QObject *payload)
     QString *payload_qstr;
     GError *err = NULL;
     GIOStatus status;
-    GIOChannel *channel = s->conn_channel;
 
     g_assert(payload);
 
@@ -272,7 +275,8 @@ static int conn_channel_send_payload(GAState *s, QObject *payload)
     qstring_append_chr(payload_qstr, '\n');
     buf = qstring_get_str(payload_qstr);
 #ifndef _WIN32
-    ret = conn_channel_send_buf(channel, buf, strlen(buf));
+    assert(s->conn_channel);
+    ret = conn_channel_send_buf(s->conn_channel, buf, strlen(buf));
     if (ret) {
         g_warning("error sending buffer: %d", ret);
         goto out_free;
@@ -281,19 +285,24 @@ static int conn_channel_send_payload(GAState *s, QObject *payload)
 
 #ifndef _WIN32
     g_debug("starting flush...");
-    status = g_io_channel_flush(channel, &err);
+    status = g_io_channel_flush(s->conn_channel, &err);
     if (err != NULL) {
         g_warning("error flushing payload: %s", err->message);
         ret = err->code;
         goto out_free;
     }
-#else
-    status = ga_channel_write_all(s->ga_channel, buf, strlen(buf), NULL);
-#endif
     if (status != G_IO_STATUS_NORMAL) {
         g_warning("abnormal status reported while flushing");
     }
     g_debug("flush completed.");
+#else
+    status = ga_channel_write_all(s->ga_channel, buf, strlen(buf), NULL);
+    if (status != G_IO_STATUS_NORMAL) {
+        g_warning("abnormal status reported while sending buffer");
+        ret = -1;
+        goto out_free;
+    }
+#endif
 
 out_free:
     QDECREF(payload_qstr);
@@ -364,7 +373,7 @@ static void process_event(JSONMessageParser *parser, QList *tokens)
             qdict_put_obj(qdict, "error", error_get_qobject(err));
             error_free(err);
         }
-        ret = conn_channel_send_payload(s->conn_channel, QOBJECT(qdict));
+        ret = conn_channel_send_payload(s, QOBJECT(qdict));
         if (ret) {
             g_warning("error sending error msg payload, code: %d", ret);
         }
@@ -380,11 +389,9 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
     gsize count;
     GError *err = NULL;
     GIOStatus status;
-    gchar *buf = NULL;
-    gchar buf_array[1024];
+    gchar buf[1024];
 
-    memset(buf_array, 0, 1024);
-    buf = &buf_array;
+    memset(buf, 0, 1024);
 #ifndef _WIN32
     status = g_io_channel_read_chars(channel, buf, 1024, &count, &err);
 #else
@@ -437,6 +444,7 @@ static gboolean ga_channel_read_cb(GIOCondition condition, gpointer data)
 }
 #endif
 
+#ifndef _WIN32
 static int conn_channel_add(GAState *s, GIOChannel *conn_channel)
 {
     GError *err = NULL;
@@ -457,28 +465,26 @@ static int conn_channel_add(GAState *s, GIOChannel *conn_channel)
     s->conn_channel = conn_channel;
     return 0;
 }
+#endif
 
 static int conn_channel_add_fd(GAState *s, int fd)
 {
+#ifndef _WIN32
     GIOChannel *conn_channel;
-#ifdef _WIN32
+#else
     GAChannel *ga_channel;
-    int fake_fd;
-    GError *err = NULL;
-    guint written;
-    const char *str;
-    char buf[1024];
 #endif
 
+#ifndef _WIN32
     g_assert(s && !s->conn_channel);
-#ifdef _WIN32
+    conn_channel = g_io_channel_unix_new(fd);
+    return conn_channel_add(s, conn_channel);
+#else
+    g_assert(s && !s->ga_channel);
     ga_channel = ga_channel_new(fd, G_IO_IN | G_IO_HUP, ga_channel_read_cb, s);
     s->ga_channel = ga_channel;
     return 0;
-#else
-    conn_channel = g_io_channel_unix_new(fd);
 #endif
-    return conn_channel_add(s, conn_channel);
 }
 
 #ifndef _WIN32
@@ -712,6 +718,9 @@ int main(int argc, char **argv)
 
     s = g_malloc0(sizeof(GAState));
     s->conn_channel = NULL;
+#ifdef _WIN32
+    s->ga_channel = NULL;
+#endif
     s->path = path;
     s->method = method;
     s->log_file = log_file;

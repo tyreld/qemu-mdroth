@@ -419,7 +419,7 @@ qga-nested-y = guest-agent-command-state.o
 qga-obj-y = $(addprefix qga/, $(qga-nested-y))
 qga-obj-y += qemu-ga.o module.o osdep.o
 qga-obj-$(CONFIG_WIN32) += oslib-win32.o qga/guest-agent-commands-win32.o
-qga-obj-$(CONFIG_WIN32) += qga/helper-win32.o qga/transport-win32.o
+qga-obj-$(CONFIG_WIN32) += qga/transport-win32.o
 qga-obj-$(CONFIG_POSIX) += oslib-posix.o qga/guest-agent-commands.o
 qga-obj-$(CONFIG_POSIX) += qemu-sockets.o qemu-option.o cutils.o
 

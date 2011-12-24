@@ -29,7 +29,3 @@ GACommandState *ga_command_state_new(void);
 bool ga_logging_enabled(GAState *s);
 void ga_disable_logging(GAState *s);
 void ga_enable_logging(GAState *s);
-
-#ifdef _WIN32
-char *get_vioserial_path(void);
-#endif

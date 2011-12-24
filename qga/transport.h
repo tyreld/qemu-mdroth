@@ -1,9 +1,9 @@
 #include <glib.h>
 
-typedef struct QgaChannel QgaChannel;
+typedef struct GAChannel GAChannel;
 
-typedef gboolean (*QgaChannelCallback)(GIOCondition condition, gpointer data);
+typedef gboolean (*GAChannelCallback)(GIOCondition condition, gpointer data);
 
-QgaChannel *qga_channel_new(int fd, GIOCondition condition, QgaChannelCallback cb, gpointer user_data);
-GIOStatus qga_channel_read(QgaChannel *c, char *buf, int size, gsize *count);
-GIOStatus qga_channel_write_all(QgaChannel *c, const char *buf, int size, gsize *count);
+GAChannel *ga_channel_new(int fd, GIOCondition condition, GAChannelCallback cb, gpointer user_data);
+GIOStatus ga_channel_read(GAChannel *c, char *buf, int size, gsize *count);
+GIOStatus ga_channel_write_all(GAChannel *c, const char *buf, int size, gsize *count);
