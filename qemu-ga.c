@@ -56,7 +56,7 @@ struct GAState {
     FILE *log_file;
     bool logging_enabled;
 #ifdef _WIN32
-    QgaChannel *qga_channel;
+    GAChannel *ga_channel;
 #endif
 };
 
@@ -279,17 +279,17 @@ static int conn_channel_send_payload(GAState *s, QObject *payload)
     }
 #endif
 
-    g_debug("starting flush...");
 #ifndef _WIN32
+    g_debug("starting flush...");
     status = g_io_channel_flush(channel, &err);
-#else
-    status = qga_channel_write_all(s->qga_channel, buf, strlen(buf), NULL);
-#endif
     if (err != NULL) {
         g_warning("error flushing payload: %s", err->message);
         ret = err->code;
         goto out_free;
     }
+#else
+    status = ga_channel_write_all(s->ga_channel, buf, strlen(buf), NULL);
+#endif
     if (status != G_IO_STATUS_NORMAL) {
         g_warning("abnormal status reported while flushing");
     }
@@ -388,8 +388,7 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
 #ifndef _WIN32
     status = g_io_channel_read_chars(channel, buf, 1024, &count, &err);
 #else
-    //status = g_io_channel_read_line(channel, &buf, &count, NULL, &err);
-    status = qga_channel_read(s->qga_channel, buf, 1, &count);
+    status = ga_channel_read(s->ga_channel, buf, 1, &count);
 #endif
     if (err != NULL) {
         g_warning("error reading channel: %s", err->message);
@@ -432,7 +431,7 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
 }
 
 #ifdef _WIN32
-static gboolean qga_channel_read_cb(GIOCondition condition, gpointer data)
+static gboolean ga_channel_read_cb(GIOCondition condition, gpointer data)
 {
     return conn_channel_read(NULL, condition, data);
 }
@@ -463,7 +462,7 @@ static int conn_channel_add_fd(GAState *s, int fd)
 {
     GIOChannel *conn_channel;
 #ifdef _WIN32
-    QgaChannel *qga_channel;
+    GAChannel *ga_channel;
     int fake_fd;
     GError *err = NULL;
     guint written;
@@ -473,22 +472,8 @@ static int conn_channel_add_fd(GAState *s, int fd)
 
     g_assert(s && !s->conn_channel);
 #ifdef _WIN32
-    //unsetenv("G_IO_WIN32_DEBUG=0");
-    /*
-    fake_fd = g_open("temp.txt", O_RDWR | _O_BINARY | O_CREAT, S_IRWXU);
-    if (fake_fd == -1) {
-        g_warning("error create switcharoo: %s", strerror(errno));
-        return -1;
-    }
-    conn_channel = g_io_channel_win32_new_fd(fake_fd);
-    int ret = dup2(fd, fake_fd);
-    if (ret == -1) {
-        g_warning("dup2() error: %s", strerror(errno));
-        return -1;
-    }
-    */
-    qga_channel = qga_channel_new(fd, G_IO_IN | G_IO_HUP, qga_channel_read_cb, s);
-    s->qga_channel = qga_channel;
+    ga_channel = ga_channel_new(fd, G_IO_IN | G_IO_HUP, ga_channel_read_cb, s);
+    s->ga_channel = ga_channel;
     return 0;
 #else
     conn_channel = g_io_channel_unix_new(fd);

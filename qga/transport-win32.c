@@ -7,58 +7,58 @@
 #include <errno.h>
 #include <io.h>
 
-struct QgaChannel {
+struct GAChannel {
     int fd;
-    QgaChannelCallback cb;
+    GAChannelCallback cb;
     gpointer user_data;
 };
 
-typedef struct QgaWatch {
+typedef struct GAWatch {
     GSource source;
     GPollFD pollfd;
-    QgaChannel *channel;
+    GAChannel *channel;
     GIOCondition condition;
-} QgaWatch;
+} GAWatch;
 
-static gboolean qga_channel_prepare(GSource *source, gint *timeout)
+static gboolean ga_channel_prepare(GSource *source, gint *timeout)
 {
     g_debug("prepare");
     *timeout = -1;
     return false;
 }
 
-static gboolean qga_channel_check(GSource *source)
+static gboolean ga_channel_check(GSource *source)
 {
-    QgaWatch *watch = (QgaWatch *)source;
+    GAWatch *watch = (GAWatch *)source;
 
     g_debug("check");
     return watch->pollfd.revents & watch->condition;
 }
 
-static gboolean qga_channel_dispatch(GSource *source, GSourceFunc unused,
+static gboolean ga_channel_dispatch(GSource *source, GSourceFunc unused,
                                      gpointer user_data)
 {
-    QgaWatch *watch = (QgaWatch *)source;
-    QgaChannel *c = (QgaChannel *)watch->channel;
+    GAWatch *watch = (GAWatch *)source;
+    GAChannel *c = (GAChannel *)watch->channel;
     g_debug("dispatch");
     return c->cb(watch->pollfd.revents, c->user_data);
 }
 
-static void qga_channel_finalize(GSource *source)
+static void ga_channel_finalize(GSource *source)
 {
 }
 
-GSourceFuncs qga_channel_watch_funcs = {
-    qga_channel_prepare,
-    qga_channel_check,
-    qga_channel_dispatch,
-    qga_channel_finalize
+GSourceFuncs ga_channel_watch_funcs = {
+    ga_channel_prepare,
+    ga_channel_check,
+    ga_channel_dispatch,
+    ga_channel_finalize
 };
 
-static GSource *qga_channel_create_watch(QgaChannel *c, GIOCondition condition)
+static GSource *ga_channel_create_watch(GAChannel *c, GIOCondition condition)
 {
-    GSource *source = g_source_new(&qga_channel_watch_funcs, sizeof(QgaWatch));
-    QgaWatch *watch = (QgaWatch *)source;
+    GSource *source = g_source_new(&ga_channel_watch_funcs, sizeof(GAWatch));
+    GAWatch *watch = (GAWatch *)source;
     //SECURITY_ATTRIBUTES sec_attrs;
 
     watch->channel = c;
@@ -79,20 +79,20 @@ static GSource *qga_channel_create_watch(QgaChannel *c, GIOCondition condition)
     return source;
 }
 
-QgaChannel *qga_channel_new(int fd, GIOCondition condition, QgaChannelCallback cb, gpointer user_data)
+GAChannel *ga_channel_new(int fd, GIOCondition condition, GAChannelCallback cb, gpointer user_data)
 {
     GSource *source;
-    QgaChannel *c = g_malloc0(sizeof(QgaChannel));
+    GAChannel *c = g_malloc0(sizeof(GAChannel));
 
     c->cb = cb;
     c->fd = fd;
     c->user_data = user_data;
-    source = qga_channel_create_watch(c, condition);
+    source = ga_channel_create_watch(c, condition);
     g_source_attach(source, NULL);
     return c;
 }
 
-GIOStatus qga_channel_read(QgaChannel *c, char *buf, int size, gsize *count)
+GIOStatus ga_channel_read(GAChannel *c, char *buf, int size, gsize *count)
 {
     GIOStatus status;
     *count = read(c->fd, buf, size);
@@ -113,7 +113,7 @@ GIOStatus qga_channel_read(QgaChannel *c, char *buf, int size, gsize *count)
     return status;
 }
 
-GIOStatus qga_channel_write_all(QgaChannel *c, const char *buf, int size,
+GIOStatus ga_channel_write_all(GAChannel *c, const char *buf, int size,
                                 gsize *count)
 {
     GIOStatus status = G_IO_STATUS_NORMAL;
