@@ -28,6 +28,7 @@
 #include "qerror.h"
 #include "error_int.h"
 #include "qapi/qmp-core.h"
+#include "qga-qapi-types.h"
 
 #define QGA_VIRTIO_PATH_DEFAULT "/dev/virtio-ports/org.qemu.guest_agent.0"
 #define QGA_PIDFILE_DEFAULT "/var/run/qemu-ga.pid"
@@ -101,6 +102,45 @@ static void usage(const char *cmd)
 }
 
 static void conn_channel_close(GAState *s);
+
+static GuestAgentSupportLevel ga_support_level;
+
+static int ga_cmp_support_levels(GuestAgentSupportLevel a,
+                                 GuestAgentSupportLevel b)
+{
+    if (a.major == b.major) {
+        if (a.minor == b.minor) {
+            return a.micro - b.micro;
+        }
+        return a.minor - b.minor;
+    }
+    return a.major - b.major;
+}
+
+bool ga_has_support_level(int major, int minor, int micro)
+{
+    const GuestAgentSupportLevel level = { major, minor, micro };
+    return ga_cmp_support_levels(ga_support_level, level) >= 0;
+}
+
+void ga_set_support_level(GuestAgentSupportLevel level)
+{
+    const GuestAgentSupportLevel min_support_level = {
+        QGA_SUPPORT_LEVEL_MAJOR_MIN,
+        QGA_SUPPORT_LEVEL_MINOR_MIN,
+        QGA_SUPPORT_LEVEL_MICRO_MIN
+    };
+    if (ga_cmp_support_levels(level, min_support_level) <= 0) {
+        ga_support_level = min_support_level;
+    } else {
+        ga_support_level = level;
+    }
+}
+
+GuestAgentSupportLevel ga_get_support_level(void)
+{
+    return ga_support_level;
+}
 
 static const char *ga_log_level_str(GLogLevelFlags level)
 {
@@ -569,6 +609,11 @@ int main(int argc, char **argv)
     GLogLevelFlags log_level = G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL;
     FILE *log_file = stderr;
     GAState *s;
+    const GuestAgentSupportLevel default_support_level = {
+        QGA_SUPPORT_LEVEL_MAJOR_DEFAULT,
+        QGA_SUPPORT_LEVEL_MINOR_DEFAULT,
+        QGA_SUPPORT_LEVEL_MICRO_DEFAULT
+    };
 
     module_call_init(MODULE_INIT_QAPI);
 
@@ -642,6 +687,7 @@ int main(int argc, char **argv)
         become_daemon(pidfile);
     }
 
+    ga_set_support_level(default_support_level);
     s = g_malloc0(sizeof(GAState));
     s->conn_channel = NULL;
     s->path = path;

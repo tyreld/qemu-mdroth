@@ -12,8 +12,16 @@
  */
 #include "qapi/qmp-core.h"
 #include "qemu-common.h"
+#include "qga-qapi-types.h"
 
 #define QGA_VERSION "1.0"
+#define QGA_SUPPORT_LEVEL_MAJOR_DEFAULT 1
+#define QGA_SUPPORT_LEVEL_MINOR_DEFAULT 0
+#define QGA_SUPPORT_LEVEL_MICRO_DEFAULT 0
+/* lowest possible support level */
+#define QGA_SUPPORT_LEVEL_MAJOR_MIN 1
+#define QGA_SUPPORT_LEVEL_MINOR_MIN 0
+#define QGA_SUPPORT_LEVEL_MICRO_MIN 0
 #define QGA_READ_COUNT_DEFAULT 4 << 10
 
 typedef struct GAState GAState;
@@ -29,3 +37,6 @@ GACommandState *ga_command_state_new(void);
 bool ga_logging_enabled(GAState *s);
 void ga_disable_logging(GAState *s);
 void ga_enable_logging(GAState *s);
+bool ga_has_support_level(int major, int minor, int micro);
+void ga_set_support_level(GuestAgentSupportLevel level);
+GuestAgentSupportLevel ga_get_support_level(void);
