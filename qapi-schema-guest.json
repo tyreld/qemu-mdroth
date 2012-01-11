@@ -51,6 +51,27 @@
   'data': { 'name': 'str', 'enabled': 'bool' } }
 
 ##
+# @GuestAgentSupportLevel
+#
+# Guest agent support/compatability level (as configured by
+# guest agent defaults of guest-set-support-level command)
+#
+# Three numerical fields describe the support level:
+#
+# <major>.<minor>.<micro>
+#
+# @major: As above
+#
+# @minor: As above
+#
+# @micro: As above
+#
+# Since 1.1.0
+##
+{ 'type': 'GuestAgentSupportLevel',
+  'data': { 'major': 'int', 'minor': 'int', 'micro': 'int' } }
+
+##
 # @GuestAgentInfo
 #
 # Information about guest agent.
@@ -59,11 +80,17 @@
 #
 # @supported_commands: Information about guest agent commands
 #
+# @support_level: Current support/compatability level, as set by
+#                 guest agent defaults or guest-set-support-level
+#                 command.
+#
 # Since 0.15.0
 ##
 { 'type': 'GuestAgentInfo',
   'data': { 'version': 'str',
-            'supported_commands': ['GuestAgentCommandInfo'] } }
+            'supported_commands': ['GuestAgentCommandInfo']
+            'support_level': 'GuestAgentSupportLevel' } }
+
 ##
 # @guest-info:
 #
@@ -75,6 +102,44 @@
 ##
 { 'command': 'guest-info',
   'returns': 'GuestAgentInfo' }
+
+##
+# @guest-set-support-level:
+#
+# Set guest agent feature-set to one that is compatible with/supported by
+# the host.
+#
+# Certain commands/options may have dependencies on host
+# version/support-level, such as specific QEMU features (such
+# dependencies will be noted in this schema). By default we assume 1.0.0,
+# which is backward-compatible with QEMU 0.15.0/1.0, and should be compatible
+# with later versions of QEMU as well. To enable newer guest agent features,
+# this command must be issued to raise the support-level to one corresponding
+# to supported host QEMU/KVM/etc capabilities.
+#
+# The host support-level is generally <= host QEMU version
+# level. Note that undefined behavior may occur if a support-level is
+# provided that exceeds the capabilities of the version of QEMU currently
+# running the guest. Any level specified below 1.0.0 will default to 1.0.0.
+#
+# The currently set support level is obtainable via the guest-info command.
+#
+# Three numerical fields describe the host support/compatability level:
+#
+# <major>.<minor>.<micro>
+#
+# @major: As above
+#
+# @minor: As above
+#
+# @micro: As above
+#
+# Returns: Nothing on success
+#
+# Since: 1.1.0
+##
+{ 'command': 'guest-set-support-level',
+  'data':    { 'major': 'int', 'minor': 'int', '*micro': 'int' } }
 
 ##
 # @guest-shutdown:

@@ -62,6 +62,8 @@ struct GuestAgentInfo *qmp_guest_info(Error **err)
     char **cmd_list_head, **cmd_list;
 
     info->version = g_strdup(QGA_VERSION);
+    info->support_level = g_malloc0(sizeof(GuestAgentSupportLevel));
+    *info->support_level = ga_get_support_level();
 
     cmd_list_head = cmd_list = qmp_get_command_list();
     if (*cmd_list_head == NULL) {
@@ -85,6 +87,17 @@ struct GuestAgentInfo *qmp_guest_info(Error **err)
 out:
     g_free(cmd_list_head);
     return info;
+}
+
+void qmp_guest_set_support_level(int64_t major, int64_t minor, bool has_micro,
+                                 int64_t micro, Error **errp)
+{
+    GuestAgentSupportLevel level = {
+        major,
+        minor,
+        has_micro ? micro : 0
+    };
+    ga_set_support_level(level);
 }
 
 void qmp_guest_shutdown(bool has_mode, const char *mode, Error **err)
