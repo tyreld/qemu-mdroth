@@ -544,7 +544,7 @@ static void init_guest_agent(GAState *s)
             exit(EXIT_FAILURE);
         }
     } else if (strcmp(s->method, "isa-serial") == 0) {
-        fd = qemu_open(s->path, O_RDWR | O_NOCTTY);
+        fd = qemu_open(s->path, O_RDWR | O_NOCTTY | O_NONBLOCK);
         if (fd == -1) {
             g_critical("error opening channel: %s", strerror(errno));
             exit(EXIT_FAILURE);
