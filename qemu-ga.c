@@ -296,7 +296,9 @@ static int conn_channel_send_payload(GAState *s, QObject *payload)
     }
     g_debug("flush completed.");
 #else
-    status = ga_channel_write_all(s->ga_channel, buf, strlen(buf), NULL);
+    g_debug("starting write...");
+    status = ga_channel_write_all(s->ga_channel, buf, strlen(buf));
+    g_debug("write completed.");
     if (status != G_IO_STATUS_NORMAL) {
         g_warning("abnormal status reported while sending buffer");
         ret = -1;
@@ -389,13 +391,12 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
     gsize count;
     GError *err = NULL;
     GIOStatus status;
-    gchar buf[1024];
+    gchar buf[(QGA_READ_COUNT_DEFAULT) + 1];
 
-    memset(buf, 0, 1024);
 #ifndef _WIN32
-    status = g_io_channel_read_chars(channel, buf, 1024, &count, &err);
+    status = g_io_channel_read_chars(channel, buf, QGA_READ_COUNT_DEFAULT, &count, &err);
 #else
-    status = ga_channel_read(s->ga_channel, buf, 1, &count);
+    status = ga_channel_read(s->ga_channel, buf, QGA_READ_COUNT_DEFAULT, &count);
 #endif
     if (err != NULL) {
         g_warning("error reading channel: %s", err->message);
@@ -405,11 +406,9 @@ static gboolean conn_channel_read(GIOChannel *channel, GIOCondition condition,
     }
     switch (status) {
     case G_IO_STATUS_NORMAL:
+        buf[count] = 0;
         g_debug("read data, count: %d, data: %s", (int)count, buf);
         json_message_parser_feed(&s->parser, (char *)buf, (int)count);
-#ifdef _WIN32
-        g_free(buf);
-#endif
         break;
     case G_IO_STATUS_ERROR:
         g_warning("status error");
@@ -467,7 +466,7 @@ static int conn_channel_add(GAState *s, GIOChannel *conn_channel)
 }
 #endif
 
-static int conn_channel_add_fd(GAState *s, int fd)
+static int conn_channel_add_fd(GAState *s, GAHandle handle)
 {
 #ifndef _WIN32
     GIOChannel *conn_channel;
@@ -477,11 +476,11 @@ static int conn_channel_add_fd(GAState *s, int fd)
 
 #ifndef _WIN32
     g_assert(s && !s->conn_channel);
-    conn_channel = g_io_channel_unix_new(fd);
+    conn_channel = g_io_channel_unix_new(handle);
     return conn_channel_add(s, conn_channel);
 #else
     g_assert(s && !s->ga_channel);
-    ga_channel = ga_channel_new(fd, G_IO_IN | G_IO_HUP, ga_channel_read_cb, s);
+    ga_channel = ga_channel_new(handle, G_IO_IN | G_IO_HUP, ga_channel_read_cb, s);
     s->ga_channel = ga_channel;
     return 0;
 #endif
@@ -562,7 +561,7 @@ static void init_guest_agent(GAState *s)
 #ifndef _WIN32
     struct termios tio;
 #endif
-    int fd;
+    GAHandle fd;
     int ret;
     //GIOChannel *chan;
 
@@ -595,7 +594,13 @@ static void init_guest_agent(GAState *s)
             exit(EXIT_FAILURE);
         }
 #else
-        fd = g_open(s->path, O_RDWR | _O_BINARY, 0);
+        //fd = g_open(s->path, O_RDWR | _O_BINARY, 0);
+        fd = CreateFile(s->path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+                        OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, NULL);
+        if (fd == INVALID_HANDLE_VALUE) {
+            g_critical("error opening path");
+            exit(EXIT_FAILURE);
+        }
 #endif
         ret = conn_channel_add_fd(s, fd);
         if (ret) {
@@ -734,6 +739,7 @@ int main(int argc, char **argv)
     ga_state = s;
 
     module_call_init(MODULE_INIT_QAPI);
+    g_thread_init(NULL);
     init_guest_agent(ga_state);
 #ifndef _WIN32
     register_signal_handlers();
