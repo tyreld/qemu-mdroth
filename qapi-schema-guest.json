@@ -360,3 +360,35 @@
 ##
 { 'command': 'guest-fsfreeze-thaw',
   'returns': 'int' }
+
+##
+# @guest-suspend
+#
+# Suspend guest execution by entering ACPI power state S3 or S4.
+#
+# This command tries to execute the scripts provided by the pm-utils
+# package. If they are not available, it will perform the suspend
+# operation by manually writing to a sysfs file.
+#
+# For the best results it's strongly recommended to have the pm-utils
+# package installed in the guest.
+#
+# @mode: 'hibernate' RAM content is saved to the disk and the guest is
+#                    powered off (this corresponds to ACPI S4)
+#        'sleep'     execution is suspended but the RAM retains its contents
+#                    (this corresponds to ACPI S3)
+#        'hybrid'    RAM content is saved to the disk but the guest is
+#                    suspended instead of powering off
+#
+# Returns: nothing on success
+#          If @mode is not supported by the guest, Unsupported
+#
+# Notes: o This is an asynchronous request. There's no guarantee a response
+#          will be sent.
+#        o Errors will be logged to guest's syslog.
+#        o It's strongly recommended to issue the guest-sync command before
+#          sending commands when the guest resumes.
+#
+# Since: 1.1
+##
+{ 'command': 'guest-suspend', 'data': { 'mode': 'str' } }

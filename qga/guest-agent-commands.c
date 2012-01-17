@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 #include "qga/guest-agent-core.h"
 #include "qga-qmp-commands.h"
 #include "qerror.h"
@@ -42,6 +43,22 @@ static void slog(const char *fmt, ...)
     va_start(ap, fmt);
     g_logv("syslog", G_LOG_LEVEL_INFO, fmt, ap);
     va_end(ap);
+}
+
+static void reopen_fd_to_null(int fd)
+{
+    int nullfd;
+
+    nullfd = open("/dev/null", O_RDWR);
+    if (nullfd < 0) {
+        return;
+    }
+
+    dup2(nullfd, fd);
+
+    if (nullfd != fd) {
+        close(nullfd);
+    }
 }
 
 int64_t qmp_guest_sync(int64_t id, Error **errp)
@@ -586,6 +603,215 @@ int64_t qmp_guest_fsfreeze_thaw(Error **err)
     return 0;
 }
 #endif
+
+#define LINUX_SYS_STATE_FILE "/sys/power/state"
+#define SUS_MODE_SUPPORTED 0
+#define SUS_MODE_NOT_SUPPORTED 1
+
+/**
+ * This function forks twice and the information about the mode support
+ * status is passed to the qemu-ga process via a pipe.
+ *
+ * This approach allows us to keep the way we reap terminated children
+ * in qemu-ga quite simple.
+ */
+static bool bios_supports_mode(const char *mode, Error **err)
+{
+    pid_t pid;
+    ssize_t ret;
+    int status, pipefds[2];
+    char *pmutils_path;
+    const char *pmutils_bin = "pm-is-supported";
+
+    if (pipe(pipefds) < 0) {
+        error_set(err, QERR_UNDEFINED_ERROR);
+        return false;
+    }
+
+    pmutils_path = g_find_program_in_path(pmutils_bin);
+
+    pid = fork();
+    if (!pid) {
+        struct sigaction act;
+
+        memset(&act, 0, sizeof(act));
+        act.sa_handler = SIG_DFL;
+        sigaction(SIGCHLD, &act, NULL);
+
+        setsid();
+        close(pipefds[0]);
+        reopen_fd_to_null(0);
+        reopen_fd_to_null(1);
+        reopen_fd_to_null(2);
+
+        pid = fork();
+        if (!pid) {
+            int fd;
+            char buf[32]; /* hopefully big enough */
+            const char *arg;
+
+            if (strcmp(mode, "hibernate") == 0) {
+                arg = "--hibernate";
+            } else if (strcmp(mode, "sleep") == 0) {
+                arg = "--suspend";
+            } else if (strcmp(mode, "hybrid") == 0) {
+                arg = "--suspend-hybrid";
+            } else {
+                _exit(SUS_MODE_NOT_SUPPORTED);
+            }
+
+            if (pmutils_path) {
+                execle(pmutils_path, pmutils_bin, arg, NULL, environ);
+            }
+
+            /*
+             * If we get here either pm-utils is not installed or  execle() has
+             * failed. Let's try the manual approach if mode is not hybrid (as
+             * it's only supported by pm-utils)
+             */
+
+            if (strcmp(mode, "hybrid") == 0) {
+                _exit(SUS_MODE_NOT_SUPPORTED);
+            }
+
+            fd = open(LINUX_SYS_STATE_FILE, O_RDONLY);
+            if (fd < 0) {
+                _exit(SUS_MODE_NOT_SUPPORTED);
+            }
+
+            ret = read(fd, buf, sizeof(buf)-1);
+            if (ret <= 0) {
+                _exit(SUS_MODE_NOT_SUPPORTED);
+            }
+            buf[ret] = '\0';
+
+            if (strcmp(mode, "hibernate") == 0 && strstr(buf, "disk")) {
+                _exit(SUS_MODE_SUPPORTED);
+            } else if (strcmp(mode, "sleep") == 0 && strstr(buf, "mem")) {
+                _exit(SUS_MODE_SUPPORTED);
+            }
+
+            _exit(SUS_MODE_NOT_SUPPORTED);
+        }
+
+        if (pid > 0) {
+            wait(&status);
+        } else {
+            status = SUS_MODE_NOT_SUPPORTED;
+        }
+
+        ret = write(pipefds[1], &status, sizeof(status));
+        if (ret != sizeof(status)) {
+            _exit(EXIT_FAILURE);
+        }
+
+        _exit(EXIT_SUCCESS);
+    }
+
+    close(pipefds[1]);
+    g_free(pmutils_path);
+
+    if (pid > 0) {
+        ret = read(pipefds[0], &status, sizeof(status));
+        if (ret == sizeof(status) && WIFEXITED(status) &&
+            WEXITSTATUS(status) == SUS_MODE_SUPPORTED) {
+            close(pipefds[0]);
+            return true;
+        }
+    }
+
+    close(pipefds[0]);
+    return false;
+}
+
+static bool host_supports_mode(const char *mode)
+{
+    if (strcmp(mode, "hibernate")) {
+        /* sleep & hybrid are only supported in qemu 1.1.0 and above */
+        return ga_has_support_level(1, 1, 0);
+    }
+    return true;
+}
+
+void qmp_guest_suspend(const char *mode, Error **err)
+{
+    pid_t pid;
+    char *pmutils_path;
+    const char *pmutils_bin;
+    Error *local_err = NULL;
+
+    if (strcmp(mode, "hibernate") == 0) {
+        pmutils_bin = "pm-hibernate";
+    } else if (strcmp(mode, "sleep") == 0) {
+        pmutils_bin = "pm-suspend";
+    } else if (strcmp(mode, "hybrid") == 0) {
+        pmutils_bin = "pm-suspend-hybrid";
+    } else {
+        error_set(err, QERR_INVALID_PARAMETER, "mode");
+        return;
+    }
+
+    if (!host_supports_mode(mode)) {
+        error_set(err, QERR_UNSUPPORTED);
+        return;
+    }
+
+    if (!bios_supports_mode(mode, &local_err)) {
+        if (error_is_set(&local_err)) {
+            error_propagate(err, local_err);
+        } else {
+            error_set(err, QERR_UNSUPPORTED);
+        }
+        return;
+    }
+
+    pmutils_path = g_find_program_in_path(pmutils_bin);
+
+    pid = fork();
+    if (pid == 0) {
+        /* child */
+        int fd;
+        const char *cmd;
+
+        setsid();
+        reopen_fd_to_null(0);
+        reopen_fd_to_null(1);
+        reopen_fd_to_null(2);
+
+        if (pmutils_path) {
+            execle(pmutils_path, pmutils_bin, NULL, environ);
+        }
+
+        /*
+         * If we get here either pm-utils is not installed or  execle() has
+         * failed. Let's try the manual approach if mode is not hybrid (as
+         * it's only supported by pm-utils)
+         */
+
+        if (strcmp(mode, "hybrid") == 0) {
+            _exit(EXIT_FAILURE);
+        }
+
+        fd = open(LINUX_SYS_STATE_FILE, O_WRONLY);
+        if (fd < 0) {
+            _exit(EXIT_FAILURE);
+        }
+
+        cmd = strcmp(mode, "sleep") == 0 ? "mem" : "disk";
+        if (write(fd, cmd, strlen(cmd)) < 0) {
+            _exit(EXIT_FAILURE);
+        }
+
+        _exit(EXIT_SUCCESS);
+    }
+
+    g_free(pmutils_path);
+
+    if (pid < 0) {
+        error_set(err, QERR_UNDEFINED_ERROR);
+        return;
+    }
+}
 
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init(GAState *s, GACommandState *cs)

@@ -17,6 +17,7 @@
 #include <getopt.h>
 #include <termios.h>
 #include <syslog.h>
+#include <sys/wait.h>
 #include "qemu_socket.h"
 #include "json-streamer.h"
 #include "json-parser.h"
@@ -60,9 +61,16 @@ static void quit_handler(int sig)
     }
 }
 
+/* reap _all_ terminated children */
+static void child_handler(int sig)
+{
+    int status;
+    while (waitpid(-1, &status, WNOHANG) > 0) /* NOTHING */;
+}
+
 static void register_signal_handlers(void)
 {
-    struct sigaction sigact;
+    struct sigaction sigact, sigact_chld;
     int ret;
 
     memset(&sigact, 0, sizeof(struct sigaction));
@@ -74,6 +82,14 @@ static void register_signal_handlers(void)
         exit(EXIT_FAILURE);
     }
     ret = sigaction(SIGTERM, &sigact, NULL);
+    if (ret == -1) {
+        g_error("error configuring signal handler: %s", strerror(errno));
+    }
+
+    memset(&sigact_chld, 0, sizeof(struct sigaction));
+    sigact_chld.sa_handler = child_handler;
+    sigact_chld.sa_flags = SA_NOCLDSTOP;
+    ret = sigaction(SIGCHLD, &sigact_chld, NULL);
     if (ret == -1) {
         g_error("error configuring signal handler: %s", strerror(errno));
     }
