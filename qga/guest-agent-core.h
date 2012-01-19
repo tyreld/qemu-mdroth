@@ -22,7 +22,7 @@
 #define QGA_SUPPORT_LEVEL_MAJOR_MIN 1
 #define QGA_SUPPORT_LEVEL_MINOR_MIN 0
 #define QGA_SUPPORT_LEVEL_MICRO_MIN 0
-#define QGA_READ_COUNT_DEFAULT 4 << 10
+#define QGA_READ_COUNT_DEFAULT 4096
 
 typedef struct GAState GAState;
 typedef struct GACommandState GACommandState;
