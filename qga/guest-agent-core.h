@@ -40,3 +40,4 @@ void ga_enable_logging(GAState *s);
 bool ga_has_support_level(int major, int minor, int micro);
 void ga_set_support_level(GuestAgentSupportLevel level);
 GuestAgentSupportLevel ga_get_support_level(void);
+void slog(const gchar *fmt, ...);
