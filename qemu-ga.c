@@ -15,7 +15,9 @@
 #include <stdbool.h>
 #include <glib.h>
 #include <getopt.h>
+#ifndef _WIN32
 #include <syslog.h>
+#endif
 #include "json-streamer.h"
 #include "json-parser.h"
 #include "qint.h"
@@ -45,6 +47,7 @@ struct GAState {
 
 static struct GAState *ga_state;
 
+#ifndef _WIN32
 static void quit_handler(int sig)
 {
     g_debug("received signal num %d, quitting", sig);
@@ -74,6 +77,7 @@ static gboolean register_signal_handlers(void)
     }
     return true;
 }
+#endif
 
 static void usage(const char *cmd)
 {
@@ -88,7 +92,9 @@ static void usage(const char *cmd)
 "  -f, --pidfile     specify pidfile (default is %s)\n"
 "  -v, --verbose     log extra debugging information\n"
 "  -V, --version     print version information and exit\n"
+#ifndef _WIN32
 "  -d, --daemonize   become a daemon\n"
+#endif
 "  -b, --blacklist   comma-separated list of RPCs to disable (no spaces, \"?\""
 "                    to list available RPCs)\n"
 "  -h, --help        display this help and exit\n"
@@ -183,9 +189,13 @@ static void ga_log(const gchar *domain, GLogLevelFlags level,
     }
 
     level &= G_LOG_LEVEL_MASK;
+#ifndef _WIN32
     if (domain && strcmp(domain, "syslog") == 0) {
         syslog(LOG_INFO, "%s: %s", level_str, msg);
     } else if (level & s->log_level) {
+#else
+    if (level & s->log_level) {
+#endif
         g_get_current_time(&time);
         fprintf(s->log_file,
                 "%lu.%lu: %s: %s\n", time.tv_sec, time.tv_usec, level_str, msg);
@@ -193,6 +203,7 @@ static void ga_log(const gchar *domain, GLogLevelFlags level,
     }
 }
 
+#ifndef _WIN32
 static void become_daemon(const char *pidfile)
 {
     pid_t pid, sid;
@@ -243,6 +254,7 @@ fail:
     g_critical("failed to daemonize");
     exit(EXIT_FAILURE);
 }
+#endif
 
 static int send_response(GAState *s, QObject *payload)
 {
@@ -511,10 +523,12 @@ int main(int argc, char **argv)
         }
     }
 
+#ifndef _WIN32
     if (daemonize) {
         g_debug("starting daemon");
         become_daemon(pidfile);
     }
+#endif
 
     ga_set_support_level(default_support_level);
     s = g_malloc0(sizeof(GAState));
@@ -528,10 +542,12 @@ int main(int argc, char **argv)
     ga_command_state_init_all(s->command_state);
     json_message_parser_init(&s->parser, process_event);
     ga_state = s;
+#ifndef _WIN32
     if (!register_signal_handlers()) {
         g_critical("failed to register signal handlers");
         goto out_bad;
     }
+#endif
 
     s->main_loop = g_main_loop_new(NULL, false);
     if (!channel_init(ga_state, method, path)) {
