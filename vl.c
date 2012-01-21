@@ -2136,6 +2136,11 @@ static void free_and_trace(gpointer mem)
     free(mem);
 }
 
+int qemu_init_main_loop(void)
+{
+    return main_loop_init();
+}
+
 int main(int argc, char **argv, char **envp)
 {
     const char *gdbstub_dev = NULL;
