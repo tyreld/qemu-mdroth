@@ -248,23 +248,29 @@
 #
 # @thawed: filesystems thawed/unfrozen
 #
-# @frozen: all non-network guest filesystems frozen
-#
-# @error: failure to thaw 1 or more
-#         previously frozen filesystems, or failure to open a previously
-#         cached filesytem (filesystem unmounted/directory changes, etc).
+# @frozen: all freezable, local guest filesystems frozen
 #
 # Since: 0.15.0
 ##
 { 'enum': 'GuestFsfreezeStatus',
-  'data': [ 'thawed', 'frozen', 'error' ] }
+  'data': [ 'thawed', 'frozen' ] }
 
 ##
 # @guest-fsfreeze-status:
 #
-# Get guest fsfreeze state. error state indicates
+# Get guest fsfreeze state.
 #
-# Returns: GuestFsfreezeStatus ("thawed", "frozen", etc., as defined below)
+# Note: There is currently no interface available to query the actual
+#       system for fsfreeze state of filesystems. We only report the
+#       state in accordance with qemu-ga's accounting: a guest admin
+#       can freeze/unfreeze filesystems outside our knowledge. qemu-ga's
+#       functionality is modified when it does a filesystem freeze,
+#       however, namely, logging and certain commands may be disabled,
+#       and full functionality will not be returned until a call to
+#       guest-fsfreeze-thaw. Determining whether such action is required
+#       is currently the only reliable use for this function.
+#
+# Returns: GuestFsfreezeStatus ("thawed", "frozen", etc., as defined)
 #
 # Since: 0.15.0
 ##
@@ -274,9 +280,9 @@
 ##
 # @guest-fsfreeze-freeze:
 #
-# Sync and freeze all non-network guest filesystems
+# Sync and freeze all freezable, local guest filesystems
 #
-# Returns: Number of file systems frozen on success
+# Returns: Number of file systems currently frozen
 #
 # Since: 0.15.0
 ##
@@ -286,10 +292,13 @@
 ##
 # @guest-fsfreeze-thaw:
 #
-# Unfreeze frozen guest fileystems
+# Unfreeze all frozen guest fileystems.
 #
-# Returns: Number of file systems thawed
-#          If error, -1 (unknown error) or -errno
+# Returns: Number of file systems thawed by this call
+#
+# Note: if return value does not match the previous call to
+#       guest-fsfreeze-freeze, freezable filesystems were
+#       unfrozen before this call.
 #
 # Since: 0.15.0
 ##
