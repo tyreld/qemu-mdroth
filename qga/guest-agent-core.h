@@ -29,3 +29,6 @@ GACommandState *ga_command_state_new(void);
 bool ga_logging_enabled(GAState *s);
 void ga_disable_logging(GAState *s);
 void ga_enable_logging(GAState *s);
+bool ga_is_frozen(GAState *s);
+void ga_set_frozen(GAState *s);
+void ga_unset_frozen(GAState *s);

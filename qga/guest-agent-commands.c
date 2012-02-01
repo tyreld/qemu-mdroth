@@ -346,17 +346,6 @@ static void guest_file_init(void)
 }
 
 #if defined(CONFIG_FSFREEZE)
-static void disable_logging(void)
-{
-    ga_disable_logging(ga_state);
-}
-
-static void enable_logging(void)
-{
-    ga_enable_logging(ga_state);
-}
-
-GuestFsfreezeStatus guest_fsfreeze_status;
 
 typedef struct GuestFsfreezeMount {
     char *dirname;
@@ -428,7 +417,11 @@ static int guest_fsfreeze_build_mount_list(GuestFsfreezeMountList *mounts)
  */
 GuestFsfreezeStatus qmp_guest_fsfreeze_status(Error **err)
 {
-    return guest_fsfreeze_status;
+    if (ga_is_frozen(ga_state)) {
+        return GUEST_FSFREEZE_STATUS_FROZEN;
+    }
+
+    return GUEST_FSFREEZE_STATUS_THAWED;
 }
 
 /*
@@ -452,7 +445,7 @@ int64_t qmp_guest_fsfreeze_freeze(Error **err)
     }
 
     /* cannot risk guest agent blocking itself on a write in this state */
-    disable_logging();
+    ga_set_frozen(ga_state);
 
     QTAILQ_FOREACH(mount, &mounts, next) {
         fd = qemu_open(mount->dirname, O_RDONLY);
@@ -489,7 +482,6 @@ int64_t qmp_guest_fsfreeze_freeze(Error **err)
     }
 
     guest_fsfreeze_free_mount_list(&mounts);
-    guest_fsfreeze_status = GUEST_FSFREEZE_STATUS_FROZEN;
     return i;
 
 error:
@@ -550,8 +542,7 @@ int64_t qmp_guest_fsfreeze_thaw(Error **err)
         close(fd);
     }
 
-    guest_fsfreeze_status = GUEST_FSFREEZE_STATUS_THAWED;
-    enable_logging();
+    ga_unset_frozen(ga_state);
     guest_fsfreeze_free_mount_list(&mounts);
     return i;
 }
