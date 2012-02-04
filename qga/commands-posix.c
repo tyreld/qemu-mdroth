@@ -28,8 +28,6 @@
 #include "qerror.h"
 #include "qemu-queue.h"
 
-static GAState *ga_state;
-
 void qmp_guest_shutdown(bool has_mode, const char *mode, Error **err)
 {
     int ret;
@@ -520,7 +518,6 @@ int64_t qmp_guest_fsfreeze_thaw(Error **err)
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init(GAState *s, GACommandState *cs)
 {
-    ga_state = s;
 #if defined(CONFIG_FSFREEZE)
     ga_command_state_add(cs, guest_fsfreeze_init, guest_fsfreeze_cleanup);
 #endif
