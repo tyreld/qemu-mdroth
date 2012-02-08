@@ -18,6 +18,7 @@
 
 typedef struct GAState GAState;
 typedef struct GACommandState GACommandState;
+extern GAState *ga_state;
 
 void ga_command_state_init(GAState *s, GACommandState *cs);
 void ga_command_state_add(GACommandState *cs,
@@ -32,3 +33,4 @@ void ga_enable_logging(GAState *s);
 bool ga_is_frozen(GAState *s);
 void ga_set_frozen(GAState *s);
 void ga_unset_frozen(GAState *s);
+int ga_get_filehandle(GAState *s);

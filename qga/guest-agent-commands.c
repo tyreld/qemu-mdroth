@@ -134,14 +134,15 @@ static struct {
     QTAILQ_HEAD(, GuestFileHandle) filehandles;
 } guest_file_state;
 
-static void guest_file_handle_add(FILE *fh)
+static int guest_file_handle_add(FILE *fh)
 {
     GuestFileHandle *gfh;
 
     gfh = g_malloc0(sizeof(GuestFileHandle));
-    gfh->id = fileno(fh);
+    gfh->id = ga_get_filehandle(ga_state);
     gfh->fh = fh;
     QTAILQ_INSERT_TAIL(&guest_file_state.filehandles, gfh, next);
+    return gfh->id;
 }
 
 static GuestFileHandle *guest_file_handle_find(int64_t id)
@@ -186,9 +187,9 @@ int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, E
         return -1;
     }
 
-    guest_file_handle_add(fh);
-    slog("guest-file-open, handle: %d", fd);
-    return fd;
+    ret = guest_file_handle_add(fh);
+    slog("guest-file-open, handle: %d", ret);
+    return ret;
 }
 
 void qmp_guest_file_close(int64_t handle, Error **err)

@@ -38,6 +38,7 @@
 typedef struct GAPersistantState {
 #define GA_FLAG_FROZEN 1
     uint32_t flags;
+    uint32_t filehandle_base;
 } GAPersistantState;
 
 struct GAState {
@@ -90,9 +91,14 @@ static void quit_handler(int sig)
     }
 }
 
+static void alarm_handler(int sig)
+{
+}
+
 static void register_signal_handlers(void)
 {
     struct sigaction sigact;
+    struct sigaction sigact_alarm;
     int ret;
 
     memset(&sigact, 0, sizeof(struct sigaction));
@@ -104,6 +110,12 @@ static void register_signal_handlers(void)
         exit(EXIT_FAILURE);
     }
     ret = sigaction(SIGTERM, &sigact, NULL);
+    if (ret == -1) {
+        g_error("error configuring signal handler: %s", strerror(errno));
+    }
+    memset(&sigact_alarm, 0, sizeof(struct sigaction));
+    sigact_alarm.sa_handler = alarm_handler;
+    ret = sigaction(SIGALRM, &sigact_alarm, NULL);
     if (ret == -1) {
         g_error("error configuring signal handler: %s", strerror(errno));
     }
@@ -180,6 +192,7 @@ static void ga_store_persistant_state(GAState *s)
     }
 
     cpu_to_le32s(&persistant_state.flags);
+    cpu_to_le32s(&persistant_state.filehandle_base);
 
     if (lseek(s->state_file, 0, SEEK_SET)) {
         g_warning("failed to rewind state file: %s", strerror(errno));
@@ -206,13 +219,27 @@ static void ga_load_persistant_state(GAState *s)
         g_warning("failed to rewind state file: %s", strerror(errno));
         return;
     }
-    ret = read(s->state_file, &persistant_state, sizeof(persistant_state));
+g_debug("m0");
+    /* unless noatime is specified for the filesystem hosting our state file,
+     * we can block on a read() due to an attempt to record a new accessed
+     * timestamp. fortunately only the first attempt to read() will cause
+     * this, so retry till successful.
+     */
+    do {
+g_debug("m1a");
+        alarm(1);
+        ret = read(s->state_file, &persistant_state, sizeof(persistant_state));
+g_debug("m1");
+    } while (ret == -1 && errno == EINTR);
+
     if (ret == -1) {
         g_warning("failed to read state file: %s", strerror(errno));
         return;
     }
 
     s->persistant_state.flags = le32_to_cpu(persistant_state.flags);
+    s->persistant_state.filehandle_base =
+        le32_to_cpu(persistant_state.filehandle_base);
 }
 
 static void ga_log(const gchar *domain, GLogLevelFlags level,
@@ -403,6 +430,13 @@ void ga_unset_frozen(GAState *s)
 
     s->persistant_state.flags &= ~GA_FLAG_FROZEN;
     ga_store_persistant_state(s);
+}
+
+int ga_get_filehandle(GAState *s)
+{
+    s->persistant_state.filehandle_base++;
+    ga_store_persistant_state(s);
+    return s->persistant_state.filehandle_base;
 }
 
 static int conn_channel_send_buf(GIOChannel *channel, const char *buf,
@@ -833,10 +867,16 @@ int main(int argc, char **argv)
     }
 
     s = g_malloc0(sizeof(GAState));
-    s->state_file = open(state_filepath, O_CREAT|O_RDWR, S_IWUSR|S_IRUSR);
+g_debug("marker 0");
+    s->state_file = open(state_filepath, O_CREAT|O_RDONLY, S_IWUSR|S_IRUSR);
+g_debug("marker 1");
     if (s->state_file != -1) {
+g_debug("marker 2");
         ga_load_persistant_state(s);
+        close(s->state_file);
+        s->state_file = open(state_filepath, O_CREAT|O_RDWR, S_IWUSR|S_IRUSR);
     }
+g_debug("marker 3");
 
     g_log_set_default_handler(ga_log, s);
     g_log_set_fatal_mask(NULL, G_LOG_LEVEL_ERROR);
