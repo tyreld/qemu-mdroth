@@ -124,12 +124,15 @@ static gboolean ga_channel_check(GSource *source)
     } else {
         error = GetLastError();
         if (error == 0 || error == ERROR_HANDLE_EOF ||
-            error == ERROR_NO_SYSTEM_RESOURCES) {
-            /* note: On WinXP SP3 with virtio-win 0.1-15 vioser drivers,
+            error == ERROR_NO_SYSTEM_RESOURCES ||
+            error == ERROR_OPERATION_ABORTED) {
+            /* note: On WinXP SP3 with rhel6ga virtio-win-1.1.16 vioser drivers,
              * ENSR seems to be synonymous with when we'd normally expect
              * ERROR_HANDLE_EOF. So treat it as such. Microsoft's
              * recommendation for ERROR_NO_SYSTEM_RESOURCES is to
-             * retry the read, so this happens to work out anyway.
+             * retry the read, so this happens to work out anyway. On newer
+             * virtio-win driver, this seems to be replaced with EOA, so
+             * handle that in the same fashion.
              */
             new_events |= G_IO_HUP;
         } else if (error != ERROR_IO_INCOMPLETE) {
