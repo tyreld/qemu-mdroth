@@ -469,15 +469,15 @@ int main(int argc, char **argv)
     const struct option lopt[] = {
         { "help", 0, NULL, 'h' },
         { "version", 0, NULL, 'V' },
-        { "logfile", 0, NULL, 'l' },
-        { "pidfile", 0, NULL, 'f' },
+        { "logfile", 1, NULL, 'l' },
+        { "pidfile", 1, NULL, 'f' },
         { "verbose", 0, NULL, 'v' },
-        { "method", 0, NULL, 'm' },
-        { "path", 0, NULL, 'p' },
+        { "method", 1, NULL, 'm' },
+        { "path", 1, NULL, 'p' },
         { "daemonize", 0, NULL, 'd' },
-        { "blacklist", 0, NULL, 'b' },
+        { "blacklist", 1, NULL, 'b' },
 #ifdef _WIN32
-        { "service", 0, NULL, 's' },
+        { "service", 1, NULL, 's' },
 #endif        
         { NULL, 0, NULL, 0 }
     };
