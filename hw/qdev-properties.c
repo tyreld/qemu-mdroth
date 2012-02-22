@@ -82,10 +82,8 @@ static void get_int8(Object *obj, Visitor *v, void *opaque,
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
     int8_t *ptr = qdev_get_prop_ptr(dev, prop);
-    int64_t value;
 
-    value = *ptr;
-    visit_type_int(v, &value, name, errp);
+    visit_type_int8(v, ptr, name, errp);
 }
 
 static void set_int8(Object *obj, Visitor *v, void *opaque,
@@ -93,16 +91,15 @@ static void set_int8(Object *obj, Visitor *v, void *opaque,
 {
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
-    int8_t *ptr = qdev_get_prop_ptr(dev, prop);
+    int8_t value, *ptr = qdev_get_prop_ptr(dev, prop);
     Error *local_err = NULL;
-    int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
         error_set(errp, QERR_PERMISSION_DENIED);
         return;
     }
 
-    visit_type_int(v, &value, name, &local_err);
+    visit_type_int8(v, &value, name, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
@@ -111,7 +108,7 @@ static void set_int8(Object *obj, Visitor *v, void *opaque,
         *ptr = value;
     } else {
         error_set(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
-                  dev->id?:"", name, value, prop->info->min,
+                  dev->id?:"", name, (int64_t)value, prop->info->min,
                   prop->info->max);
     }
 }
@@ -168,10 +165,8 @@ static void get_int16(Object *obj, Visitor *v, void *opaque,
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
     int16_t *ptr = qdev_get_prop_ptr(dev, prop);
-    int64_t value;
 
-    value = *ptr;
-    visit_type_int(v, &value, name, errp);
+    visit_type_int16(v, ptr, name, errp);
 }
 
 static void set_int16(Object *obj, Visitor *v, void *opaque,
@@ -179,16 +174,15 @@ static void set_int16(Object *obj, Visitor *v, void *opaque,
 {
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
-    int16_t *ptr = qdev_get_prop_ptr(dev, prop);
+    int16_t value, *ptr = qdev_get_prop_ptr(dev, prop);
     Error *local_err = NULL;
-    int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
         error_set(errp, QERR_PERMISSION_DENIED);
         return;
     }
 
-    visit_type_int(v, &value, name, &local_err);
+    visit_type_int16(v, &value, name, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
@@ -197,7 +191,7 @@ static void set_int16(Object *obj, Visitor *v, void *opaque,
         *ptr = value;
     } else {
         error_set(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
-                  dev->id?:"", name, value, prop->info->min,
+                  dev->id?:"", name, (int64_t)value, prop->info->min,
                   prop->info->max);
     }
 }
@@ -217,11 +211,10 @@ static void get_int32(Object *obj, Visitor *v, void *opaque,
 {
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
-    int32_t *ptr = qdev_get_prop_ptr(dev, prop);
-    int64_t value;
+    int32_t value, *ptr = qdev_get_prop_ptr(dev, prop);
 
     value = *ptr;
-    visit_type_int(v, &value, name, errp);
+    visit_type_int32(v, &value, name, errp);
 }
 
 static void set_int32(Object *obj, Visitor *v, void *opaque,
@@ -229,16 +222,15 @@ static void set_int32(Object *obj, Visitor *v, void *opaque,
 {
     DeviceState *dev = DEVICE(obj);
     Property *prop = opaque;
-    int32_t *ptr = qdev_get_prop_ptr(dev, prop);
+    int32_t value, *ptr = qdev_get_prop_ptr(dev, prop);
     Error *local_err = NULL;
-    int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
         error_set(errp, QERR_PERMISSION_DENIED);
         return;
     }
 
-    visit_type_int(v, &value, name, &local_err);
+    visit_type_int32(v, &value, name, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
@@ -247,7 +239,7 @@ static void set_int32(Object *obj, Visitor *v, void *opaque,
         *ptr = value;
     } else {
         error_set(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
-                  dev->id?:"", name, value, prop->info->min,
+                  dev->id?:"", name, (int64_t)value, prop->info->min,
                   prop->info->max);
     }
 }
@@ -313,7 +305,7 @@ static void get_int64(Object *obj, Visitor *v, void *opaque,
     Property *prop = opaque;
     int64_t *ptr = qdev_get_prop_ptr(dev, prop);
 
-    visit_type_int(v, ptr, name, errp);
+    visit_type_int64(v, ptr, name, errp);
 }
 
 static void set_int64(Object *obj, Visitor *v, void *opaque,
@@ -328,7 +320,7 @@ static void set_int64(Object *obj, Visitor *v, void *opaque,
         return;
     }
 
-    visit_type_int(v, ptr, name, errp);
+    visit_type_int64(v, ptr, name, errp);
 }
 
 PropertyInfo qdev_prop_uint64 = {
@@ -649,7 +641,7 @@ static void get_vlan(Object *obj, Visitor *v, void *opaque,
     int64_t id;
 
     id = *ptr ? (*ptr)->id : -1;
-    visit_type_int(v, &id, name, errp);
+    visit_type_int64(v, &id, name, errp);
 }
 
 static void set_vlan(Object *obj, Visitor *v, void *opaque,
@@ -667,7 +659,7 @@ static void set_vlan(Object *obj, Visitor *v, void *opaque,
         return;
     }
 
-    visit_type_int(v, &id, name, &local_err);
+    visit_type_int64(v, &id, name, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
