@@ -1,6 +1,7 @@
 CHECKS = check-qdict check-qfloat check-qint check-qstring check-qlist
 CHECKS += check-qjson test-qmp-output-visitor test-qmp-input-visitor
 CHECKS += test-string-input-visitor test-string-output-visitor test-coroutine
+CHECKS += test-visitor-serialization
 
 check-qint.o check-qstring.o check-qdict.o check-qlist.o check-qfloat.o check-qjson.o test-coroutine.o: $(GENERATED_HEADERS)
 
@@ -14,7 +15,7 @@ test-coroutine: test-coroutine.o qemu-timer-common.o async.o $(coroutine-obj-y) 
 
 test-qmp-input-visitor.o test-qmp-output-visitor.o \
 test-string-input-visitor.o test-string-output-visitor.o \
-	test-qmp-commands.o qemu-ga$(EXESUF): QEMU_CFLAGS += -I $(qapi-dir)
+	test-qmp-commands.o qemu-ga$(EXESUF) test-visitor-serialization: QEMU_CFLAGS += -I $(qapi-dir)
 
 $(qapi-dir)/test-qapi-types.c $(qapi-dir)/test-qapi-types.h :\
 $(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-types.py
@@ -41,6 +42,9 @@ test-qmp-input-visitor: test-qmp-input-visitor.o $(qobject-obj-y) $(qapi-obj-y) 
 
 test-qmp-commands.o: $(addprefix $(qapi-dir)/, test-qapi-types.c test-qapi-types.h test-qapi-visit.c test-qapi-visit.h test-qmp-marshal.c test-qmp-commands.h) $(qapi-obj-y)
 test-qmp-commands: test-qmp-commands.o $(qobject-obj-y) $(qapi-obj-y) $(tools-obj-y) $(qapi-dir)/test-qapi-visit.o $(qapi-dir)/test-qapi-types.o $(qapi-dir)/test-qmp-marshal.o module.o
+
+test-visitor-serialization.o: $(addprefix $(qapi-dir)/, test-qapi-types.c test-qapi-types.h test-qapi-visit.c test-qapi-visit.h) $(qapi-obj-y)
+test-visitor-serialization$(EXESUF): test-visitor-serialization.o $(qobject-obj-y) $(qapi-obj-y) $(tools-obj-y) $(qapi-dir)/test-qapi-visit.o $(qapi-dir)/test-qapi-types.o
 
 .PHONY: check
 check: $(CHECKS)
