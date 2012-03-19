@@ -391,6 +391,11 @@ def qapi_format(node, is_save=True):
     print '}'
     print
 
+import json
+
+def schema_format(node):
+    print json.dumps(node, sort_keys=True, indent=4)
+
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
 
@@ -408,6 +413,4 @@ if __name__ == '__main__':
 
         qapi_format(node, True)
         qapi_format(node, False)
-
-    
-
+        schema_format(node)
