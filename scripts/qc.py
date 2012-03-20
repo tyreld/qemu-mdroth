@@ -393,8 +393,41 @@ def qapi_format(node, is_save=True):
 
 import json
 
-def schema_format(node):
+def type_dump(node):
     print json.dumps(node, sort_keys=True, indent=4)
+
+def qapi_schema(node):
+    schema = {}
+    data = {}
+    fields = None
+    if node.has_key('typedef'):
+        schema['type'] = node['typedef']
+        fields = node['type']['fields']
+    elif node.has_key('struct'):
+        schema['type'] = node['struct']
+        fields = node['fields']
+    else:
+        raise Exception("top-level neither typedef nor struct")
+
+    for field in fields:
+        if field.has_key('is_derived') or field.has_key('is_immutable') or field.has_key('is_broken'):
+            continue
+
+        if field['type'].endswith('_t'):
+            typename = field['type'][:-2]
+        elif field['type'].startswith('struct '):
+            typename = field['type'].split(" ")[1]
+        else:
+            typename = field['type']
+
+        if field.has_key('is_array'):
+            data[field['variable']] = "[%s]" % typename
+        else:
+            data[field['variable']] = typename
+
+
+    schema['data'] = data
+    print json.dumps(schema, sort_keys=True, indent=4)
 
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
@@ -413,4 +446,5 @@ if __name__ == '__main__':
 
         qapi_format(node, True)
         qapi_format(node, False)
-        schema_format(node)
+        type_dump(node)
+        qapi_schema(node)
