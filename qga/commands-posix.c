@@ -729,6 +729,7 @@ void qmp_guest_suspend_hybrid(Error **err)
     guest_suspend("pm-suspend-hybrid", NULL, err);
 }
 
+#if defined(__linux__)
 static GuestNetworkInterfaceList *
 guest_find_interface(GuestNetworkInterfaceList *head,
                      const char *name)
@@ -903,6 +904,16 @@ error:
     qapi_free_GuestNetworkInterfaceList(head);
     return NULL;
 }
+
+#else /* defined(linux) */
+
+GuestNetworkInterfaceList *qmp_guest_network_get_interfaces(Error **err)
+{
+    error_set(err, QERR_UNSUPPORTED);
+    return NULL;
+}
+
+#endif /* defined(linux) */
 
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init(GAState *s, GACommandState *cs)
