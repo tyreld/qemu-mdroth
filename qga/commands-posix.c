@@ -24,10 +24,12 @@
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#if defined(__linux__)
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <net/if.h>
+#endif
 #include <sys/wait.h>
 #include "qga/guest-agent-core.h"
 #include "qga-qmp-commands.h"
@@ -542,6 +544,7 @@ int64_t qmp_guest_fsfreeze_thaw(Error **err)
 #define SUSPEND_SUPPORTED 0
 #define SUSPEND_NOT_SUPPORTED 1
 
+#if defined(__linux__)
 /**
  * This function forks twice and the information about the mode support
  * status is passed to the qemu-ga process via a pipe.
@@ -728,6 +731,25 @@ void qmp_guest_suspend_hybrid(Error **err)
 
     guest_suspend("pm-suspend-hybrid", NULL, err);
 }
+
+#else /* defined(linux) */
+
+void qmp_guest_suspend_disk(Error **err)
+{
+    error_set(err, QERR_UNSUPPORTED);
+}
+
+void qmp_guest_suspend_ram(Error **err)
+{
+    error_set(err, QERR_UNSUPPORTED);
+}
+
+void qmp_guest_suspend_hybrid(Error **err)
+{
+    error_set(err, QERR_UNSUPPORTED);
+}
+
+#endif
 
 #if defined(__linux__)
 static GuestNetworkInterfaceList *
