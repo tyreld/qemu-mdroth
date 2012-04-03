@@ -2,6 +2,9 @@
 
 import sys
 
+marker = "qc_declaration"
+marked = False
+
 class Input(object):
     def __init__(self, fp):
         self.fp = fp
@@ -51,10 +54,34 @@ def is_FS(ch):
 def is_IS(ch):
     return ch in 'uUlL'
 
+def find_marker(ch, fp):
+    global marked
+
+    # scan for marker before full processing
+
+    while not marked and not fp.eof:
+        token = ''
+        if is_L(ch):
+            token += ch
+            while True:
+                ch = fp.pop()
+                if not is_L(ch) and not is_D(ch):
+                    break
+                token += ch
+            if token == marker:
+                marked = True
+                return
+        ch = fp.pop()
+    return
+
 def lexer(fp):
+    global marked
     ch = fp.pop()
 
     while not fp.eof:
+        if not marked:
+            find_marker(ch, fp)
+            ch = fp.pop()
         token = ''
 
         if is_L(ch):
@@ -193,6 +220,9 @@ class LookAhead(object):
         self.full = False
 
     def at(self, i):
+        if not marked:
+            self.la = []
+            self.full = False
         if i >= len(self.la):
             if self.full:
                 raise StopIteration()
@@ -437,10 +467,14 @@ if __name__ == '__main__':
         try:
             if choice(la, index, 'typedef'):
                 offset, node = parse_typedef(la, index)
-            else:
+            elif choice(la, index, 'struct'):
                 offset, node = parse_struct(la, index)
+            else:
+                continue
 
             index, _ = expect(la, index + offset, 'operator', ';')
+            marked = False
+            index = 0
         except StopIteration, e:
             break
 
