@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import sys
+from ordereddict import OrderedDict
 
 marker = "qc_declaration"
 marked = False
@@ -427,8 +428,8 @@ def type_dump(node):
     print json.dumps(node, sort_keys=True, indent=4)
 
 def qapi_schema(node):
-    schema = {}
-    data = {}
+    schema = OrderedDict()
+    data = OrderedDict()
     fields = None
     if node.has_key('typedef'):
         schema['type'] = node['typedef']
@@ -457,7 +458,7 @@ def qapi_schema(node):
 
 
     schema['data'] = data
-    print json.dumps(schema, sort_keys=True, indent=4)
+    print json.dumps(schema, indent=4)
 
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
