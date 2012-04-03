@@ -452,7 +452,7 @@ def qapi_schema(node):
             typename = field['type']
 
         if field.has_key('is_array'):
-            data[field['variable']] = "[%s]" % typename
+            data[field['variable']] = [typename]
         else:
             data[field['variable']] = typename
 
