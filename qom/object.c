@@ -662,7 +662,8 @@ void object_property_add(Object *obj, const char *name, const char *type,
     QTAILQ_INSERT_TAIL(&obj->properties, prop, node);
 }
 
-ObjectProperty *object_property_find(Object *obj, const char *name)
+ObjectProperty *object_property_find(Object *obj, const char *name,
+                                     Error **errp)
 {
     ObjectProperty *prop;
 
@@ -672,15 +673,14 @@ ObjectProperty *object_property_find(Object *obj, const char *name)
         }
     }
 
+    error_set(errp, QERR_PROPERTY_NOT_FOUND, "", name);
     return NULL;
 }
 
 void object_property_del(Object *obj, const char *name, Error **errp)
 {
-    ObjectProperty *prop = object_property_find(obj, name);
-
+    ObjectProperty *prop = object_property_find(obj, name, errp);
     if (prop == NULL) {
-        error_set(errp, QERR_PROPERTY_NOT_FOUND, "", name);
         return;
     }
 
@@ -698,10 +698,8 @@ void object_property_del(Object *obj, const char *name, Error **errp)
 void object_property_get(Object *obj, Visitor *v, const char *name,
                          Error **errp)
 {
-    ObjectProperty *prop = object_property_find(obj, name);
-
+    ObjectProperty *prop = object_property_find(obj, name, errp);
     if (prop == NULL) {
-        error_set(errp, QERR_PROPERTY_NOT_FOUND, "", name);
         return;
     }
 
@@ -715,10 +713,8 @@ void object_property_get(Object *obj, Visitor *v, const char *name,
 void object_property_set(Object *obj, Visitor *v, const char *name,
                          Error **errp)
 {
-    ObjectProperty *prop = object_property_find(obj, name);
-
+    ObjectProperty *prop = object_property_find(obj, name, errp);
     if (prop == NULL) {
-        error_set(errp, QERR_PROPERTY_NOT_FOUND, "", name);
         return;
     }
 
@@ -871,10 +867,8 @@ char *object_property_print(Object *obj, const char *name,
 
 const char *object_property_get_type(Object *obj, const char *name, Error **errp)
 {
-    ObjectProperty *prop = object_property_find(obj, name);
-
+    ObjectProperty *prop = object_property_find(obj, name, errp);
     if (prop == NULL) {
-        error_set(errp, QERR_PROPERTY_NOT_FOUND, "", name);
         return NULL;
     }
 
@@ -1057,7 +1051,7 @@ gchar *object_get_canonical_path(Object *obj)
 
 Object *object_resolve_path_component(Object *parent, gchar *part)
 {
-    ObjectProperty *prop = object_property_find(parent, part);
+    ObjectProperty *prop = object_property_find(parent, part, NULL);
     if (prop == NULL) {
         return NULL;
     }
