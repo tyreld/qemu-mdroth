@@ -45,7 +45,7 @@ struct %(name)s
 ''',
           name=structname)
 
-    for argname, argentry, optional, structured in parse_args(members):
+    for argname, argentry, optional, structured, annotated in parse_args(members):
         if optional:
             ret += mcgen('''
     bool has_%(c_name)s;
