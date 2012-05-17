@@ -304,8 +304,7 @@ def parse_type(la, index):
         next, _ = expect(la, next, 'operator', ')')
 
         ret['is_array'] = True
-        ret['array_size'] = 's->%s' % array_size
-        
+        ret['array_size'] = array_size
 
     if choice(la, next, 'operator', '*'):
         next += 1
@@ -444,6 +443,8 @@ def qapi_schema(node):
         if field.has_key('is_derived') or field.has_key('is_immutable') or field.has_key('is_broken'):
             continue
 
+        description = {}
+
         if field['type'].endswith('_t'):
             typename = field['type'][:-2]
         elif field['type'].startswith('struct '):
@@ -451,14 +452,21 @@ def qapi_schema(node):
         else:
             typename = field['type']
 
-        if field.has_key('is_array'):
-            data[field['variable']] = [typename]
+        if field.has_key('is_array') and field['is_array']:
+            description['type'] = [typename]
+            description['<annotated>'] = 'true'
+            if field.has_key('array_size'):
+                description['array_size'] = field['array_size']
+            if field.has_key('array_capacity'):
+                description['array_capacity'] = field['array_capacity']
         else:
-            data[field['variable']] = typename
+            #description['type'] = typename
+            description = typename
 
+        data[field['variable']] = description
 
     schema['data'] = data
-    print json.dumps(schema, indent=4)
+    print json.dumps(schema, indent=2).replace("\"", "'")
 
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
@@ -479,7 +487,7 @@ if __name__ == '__main__':
         except StopIteration, e:
             break
 
-        qapi_format(node, True)
-        qapi_format(node, False)
-        type_dump(node)
+        #qapi_format(node, True)
+        #qapi_format(node, False)
+        #type_dump(node)
         qapi_schema(node)
