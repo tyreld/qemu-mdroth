@@ -41,7 +41,6 @@ def generate_visit_struct_body(field_prefix, members):
     if len(field_prefix):
         field_prefix = field_prefix + "."
     for argname, argentry, optional, structured, annotated in parse_args(members):
-        print "argname: %s, structured: %s, annotated: %s" % (argname, structured, annotated)
         if optional:
             ret += mcgen('''
 visit_start_optional(m, (obj && *obj) ? &(*obj)->%(c_prefix)shas_%(c_name)s : NULL, "%(name)s", errp);
@@ -301,7 +300,6 @@ fdecl.write(mcgen('''
 exprs = parse_schema(sys.stdin)
 
 for expr in exprs:
-    print "expr: %s" % expr
     if expr.has_key('type'):
         ret = generate_visit_struct(expr['type'], expr['data'])
         ret += generate_visit_list(expr['type'], expr['data'])
