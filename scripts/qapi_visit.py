@@ -16,6 +16,90 @@ import sys
 import os
 import getopt
 import errno
+import types
+
+def generate_visit_carray_body(name, info):
+    if info['array_size'][0].isdigit():
+        array_size = info['array_size']
+    elif info['array_size'][0] == '(' and info['array_size'][-1] == ')':
+        array_size = info['array_size']
+    else:
+        array_size = "(*obj)->%s" % info['array_size']
+
+    if info.has_key('array_capacity'):
+        array_capacity = info['array_capacity']
+    else:
+        array_capacity = array_size
+
+    # Visitors for "objects" (qidl-generated visitors for structs or
+    # qapi-defined types) expect a <type>** argument so that, in some
+    # cases, memory can be allocated for the object and a pointer to that
+    # memory can be assigned to the location/pointer passed to the visitor
+    # call.
+    #
+    # For other cases, "primitive" types, we don't do allocations and thus
+    # expect a <type>*.
+    #
+    # So we use special handling for the former case, below, to get the
+    # arguments right. We identify these cases by checking if the type
+    # uses camel-case, which is reserved for typedef'd structs/objects as
+    # per QEMU coding standards and QAPI convention.
+    if camel_case(de_camel_case(info['type'][0])) == info['type'][0]:
+        ret = mcgen('''
+
+if (!error_is_set(errp)) {
+    Error *%(local_err)s = NULL;
+    visit_start_carray(m, (void **)obj, "%(name)s", %(array_capacity)s, sizeof(%(type)s), &%(local_err)s);
+    if (!%(local_err)s) {
+        int %(name)s_i;
+        for (%(name)s_i = 0; %(name)s_i < %(array_size)s; %(name)s_i++) {
+            %(type)s %(name)s_ptr = &(*obj)->%(name)s[%(name)s_i];
+            visit_next_carray(m, &%(local_err)s);
+            visit_type_%(type_short)s(m, &%(name)s_ptr, NULL, &%(local_err)s);
+        }
+
+        error_propagate(errp, %(local_err)s);
+        %(local_err)s = NULL;
+
+        /* Always call end_carry if start_carray succeeded.  */
+        visit_end_carray(m, &%(local_err)s);
+    }
+    error_propagate(errp, %(local_err)s);
+}
+''',
+                    name=name, type=c_type(info['type'][0]),
+                    type_short=info['type'][0],
+                    array_size=str(array_size),
+                    array_capacity=str(array_capacity),
+                    local_err=name + "_err")
+    else:
+        ret = mcgen('''
+if (!error_is_set(errp)) {
+    Error *%(local_err)s = NULL;
+    visit_start_carray(m, (void **)obj, "%(name)s", %(array_capacity)s, sizeof(%(type)s), &%(local_err)s);
+    if (!%(local_err)s) {
+        int %(name)s_i;
+        for (%(name)s_i = 0; %(name)s_i < %(array_size)s; %(name)s_i++) {
+            %(type)s *%(name)s_ptr = (%(type)s *)&(*obj)->%(name)s[%(name)s_i];
+            visit_next_carray(m, &%(local_err)s);
+            visit_type_%(type_short)s(m, %(name)s_ptr, NULL, &%(local_err)s);
+        }
+
+        error_propagate(errp, %(local_err)s);
+        %(local_err)s = NULL;
+
+        /* Always call end_carry if start_carray succeeded.  */
+        visit_end_carray(m, &%(local_err)s);
+    }
+    error_propagate(errp, %(local_err)s);
+}
+''',
+                    name=name, type=c_type(info['type'][0]),
+                    type_short=info['type'][0],
+                    array_size=str(array_size),
+                    array_capacity=str(array_capacity),
+                    local_err=name + "_err")
+    return ret
 
 def generate_visit_struct_body(field_prefix, name, members):
     ret = mcgen('''
@@ -45,10 +129,10 @@ if (!err) {
 
     push_indent()
     push_indent()
-    for argname, argentry, optional, structured in parse_args(members):
+    for argname, argentry, optional, structured, annotated in parse_args(members):
         if optional:
             ret += mcgen('''
-visit_start_optional(m, obj ? &(*obj)->%(c_prefix)shas_%(c_name)s : NULL, "%(name)s", &err);
+visit_start_optional(m, obj ? &(*obj)->%(c_prefix)shas_%(c_name)s : NULL, "%(name)s", errp);
 if (obj && (*obj)->%(prefix)shas_%(c_name)s) {
 ''',
                          c_prefix=c_var(field_prefix), prefix=field_prefix,
@@ -58,12 +142,16 @@ if (obj && (*obj)->%(prefix)shas_%(c_name)s) {
         if structured:
             ret += generate_visit_struct_body(field_prefix + argname, argname, argentry)
         else:
-            ret += mcgen('''
-visit_type_%(type)s(m, obj ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", &err);
+            if annotated:
+                if isinstance(argentry['type'], types.ListType):
+                    ret += generate_visit_carray_body(argname, argentry)
+            else:
+                ret += mcgen('''
+visit_type_%(type)s(m, obj ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
 ''',
-                         c_prefix=c_var(field_prefix), prefix=field_prefix,
-                         type=type_name(argentry), c_name=c_var(argname),
-                         name=argname)
+                             c_prefix=c_var(field_prefix), prefix=field_prefix,
+                             type=type_name(argentry), c_name=c_var(argname),
+                             name=argname)
 
         if optional:
             pop_indent()
