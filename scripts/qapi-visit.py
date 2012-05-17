@@ -16,6 +16,22 @@ import sys
 import os
 import getopt
 import errno
+import types
+
+def generate_visit_array_body(name, info):
+    ret = mcgen('''
+visit_start_array(m, (void **)obj, "%(name)s", %(count)s, sizeof(%(type)s), errp);
+int %(name)s_i;
+for (%(name)s_i = 0; %(name)s_i < %(count)s; %(name)s_i++) {
+    visit_type_%(type_short)s(m, &(*obj)->%(name)s[%(name)s_i], NULL, errp);
+    visit_next_array(m, errp);
+}
+visit_end_array(m, errp);
+''',
+                name=name, type=c_type(info['type'][0]),
+                type_short=info['type'][0],
+                count=info['array_size'])
+    return ret
 
 def generate_visit_array_body(name, info):
     if info.has_key('array_capacity'):
@@ -47,7 +63,7 @@ def generate_visit_struct_body(field_prefix, members):
     ret = ""
     if len(field_prefix):
         field_prefix = field_prefix + "."
-    for argname, argentry, optional, structured in parse_args(members):
+    for argname, argentry, optional, structured, annotated in parse_args(members):
         if optional:
             ret += mcgen('''
 visit_start_optional(m, (obj && *obj) ? &(*obj)->%(c_prefix)shas_%(c_name)s : NULL, "%(name)s", errp);
@@ -67,12 +83,16 @@ visit_start_struct(m, NULL, "", "%(name)s", 0, errp);
 visit_end_struct(m, errp);
 ''')
         else:
-            ret += mcgen('''
+            if annotated:
+                if isinstance(argentry['type'], types.ListType):
+                    ret += generate_visit_array_body(argname, argentry)
+            else:
+                ret += mcgen('''
 visit_type_%(type)s(m, (obj && *obj) ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
 ''',
-                         c_prefix=c_var(field_prefix), prefix=field_prefix,
-                         type=type_name(argentry), c_name=c_var(argname),
-                         name=argname)
+                             c_prefix=c_var(field_prefix), prefix=field_prefix,
+                             type=type_name(argentry), c_name=c_var(argname),
+                             name=argname)
 
         if optional:
             pop_indent()
