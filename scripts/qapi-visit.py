@@ -206,8 +206,10 @@ void visit_type_%(name)s(Visitor *m, %(name)s * obj, const char *name, Error **e
                 name=name)
 
 try:
-    opts, args = getopt.gnu_getopt(sys.argv[1:], "chp:o:",
-                                   ["source", "header", "prefix=", "output-dir="])
+    opts, args = getopt.gnu_getopt(sys.argv[1:], "chp:o:ei:",
+                                   ["source", "header", "prefix=",
+                                    "output-dir=", "existing-types",
+                                    "include="])
 except getopt.GetoptError, err:
     print str(err)
     sys.exit(1)
@@ -216,9 +218,11 @@ output_dir = ""
 prefix = ""
 c_file = 'qapi-visit.c'
 h_file = 'qapi-visit.h'
+includes = []
 
 do_c = False
 do_h = False
+existing_types = False
 
 for o, a in opts:
     if o in ("-p", "--prefix"):
@@ -229,6 +233,10 @@ for o, a in opts:
         do_c = True
     elif o in ("-h", "--header"):
         do_h = True
+    elif o in ("-e", "--existing-types"):
+        existing_types = True
+    elif o in ("-i", "--include"):
+        includes.append(a)
 
 if not do_c and not do_h:
     do_c = True
@@ -293,9 +301,21 @@ fdecl.write(mcgen('''
 #define %(guard)s
 
 #include "qapi/qapi-visit-core.h"
-#include "%(prefix)sqapi-types.h"
 ''',
                   prefix=prefix, guard=guardname(h_file)))
+
+if not existing_types:
+    fdecl.write(mcgen('''
+#include "%(prefix)sqapi-types.h"
+''',
+                prefix=prefix))
+
+for include in includes:
+    fdecl.write(mcgen('''
+#include "%(include)s"
+''',
+                include=include))
+
 
 exprs = parse_schema(sys.stdin)
 
