@@ -99,12 +99,16 @@ def parse_args(typeinfo):
         argentry = typeinfo[member]
         optional = False
         structured = False
+        annotated = False
         if member.startswith('*'):
             argname = member[1:]
             optional = True
         if isinstance(argentry, OrderedDict):
-            structured = True
-        yield (argname, argentry, optional, structured)
+            if argentry.has_key('<annotated>'):
+                annotated = True
+            else:
+                structured = True
+        yield (argname, argentry, optional, structured, annotated)
 
 def de_camel_case(name):
     new_name = ''
@@ -177,6 +181,8 @@ def c_type(name):
         return 'void'
     elif name == name.upper():
         return '%sEvent *' % camel_case(name)
+    elif name.replace("u", "").replace("int", "") in ["8", "16", "32", "64"]:
+        return name + "_t"
     else:
         return '%s *' % name
 
