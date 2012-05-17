@@ -16,12 +16,32 @@ import sys
 import os
 import getopt
 import errno
+import types
+
+def generate_visit_array_body(name, info):
+    ret = mcgen('''
+GenericList *%(name)s_i, **%(name)s_prev = (GenericList **)obj;
+size_t i;
+
+visit_start_list(m, name, errp);
+
+for (; (%(name)s_i = visit_next_list(m, %(name)s_prev, errp)) != NULL;
+     %(name)s_prev = &%(name)s_i) {
+    %(name)sList *native_i = (%(name)sList *)i;
+    visit_type_%(name)s(m, &native_i->value, NULL, errp);
+}
+
+visit_end_list(m, errp);
+''',
+                name=name)
+    return ret
 
 def generate_visit_struct_body(field_prefix, members):
     ret = ""
     if len(field_prefix):
         field_prefix = field_prefix + "."
-    for argname, argentry, optional, structured in parse_args(members):
+    for argname, argentry, optional, structured, annotated in parse_args(members):
+        print "argname: %s, structured: %s, annotated: %s" % (argname, structured, annotated)
         if optional:
             ret += mcgen('''
 visit_start_optional(m, (obj && *obj) ? &(*obj)->%(c_prefix)shas_%(c_name)s : NULL, "%(name)s", errp);
@@ -41,12 +61,16 @@ visit_start_struct(m, NULL, "", "%(name)s", 0, errp);
 visit_end_struct(m, errp);
 ''')
         else:
-            ret += mcgen('''
+            if annotated:
+                if isinstance(argentry['type'], types.ListType):
+                    ret += generate_visit_array_body(argname, argentry)
+            else:
+                ret += mcgen('''
 visit_type_%(type)s(m, (obj && *obj) ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
 ''',
-                         c_prefix=c_var(field_prefix), prefix=field_prefix,
-                         type=type_name(argentry), c_name=c_var(argname),
-                         name=argname)
+                             c_prefix=c_var(field_prefix), prefix=field_prefix,
+                             type=type_name(argentry), c_name=c_var(argname),
+                             name=argname)
 
         if optional:
             pop_indent()
@@ -277,6 +301,7 @@ fdecl.write(mcgen('''
 exprs = parse_schema(sys.stdin)
 
 for expr in exprs:
+    print "expr: %s" % expr
     if expr.has_key('type'):
         ret = generate_visit_struct(expr['type'], expr['data'])
         ret += generate_visit_list(expr['type'], expr['data'])
