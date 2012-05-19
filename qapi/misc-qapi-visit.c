@@ -15,11 +15,6 @@ void visit_type_tm(Visitor *v, struct tm *obj, const char *name, Error **errp)
     visit_end_struct(v, errp);
 }
 
-void visit_type_qemu_irq(Visitor *v, void **obj, const char *name,
-                         Error **errp)
-{
-}
-
 void visit_type_QEMUTimer(Visitor *v, QEMUTimer **obj, const char *name,
                           Error **errp)
 {
