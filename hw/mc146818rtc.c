@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "mc146818rtc.h"
 #include "mc146818rtc_state.h"
+#include "qapi-generated/mc146818rtc-qapi-visit.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
@@ -590,6 +591,14 @@ static void rtc_get_date(Object *obj, Visitor *v, void *opaque,
     visit_end_struct(v, errp);
 }
 
+static void rtc_get_state(Object *obj, Visitor *v, void *opaque,
+                         const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    RTCState *s = DO_UPCAST(RTCState, dev, isa);
+    visit_type_RTCState(v, &s, name, errp);
+}
+
 static int rtc_initfn(ISADevice *dev)
 {
     RTCState *s = DO_UPCAST(RTCState, dev, dev);
@@ -637,6 +646,9 @@ static int rtc_initfn(ISADevice *dev)
 
     object_property_add(OBJECT(s), "date", "struct tm",
                         rtc_get_date, NULL, NULL, s, NULL);
+
+    object_property_add(OBJECT(s), "state", "RTCState",
+                        rtc_get_state, NULL, NULL, s, NULL);
 
     return 0;
 }
