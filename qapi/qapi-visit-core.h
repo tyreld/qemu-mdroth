@@ -100,4 +100,7 @@ void visit_start_carray(Visitor *v, void **obj, const char *name,
 void visit_next_carray(Visitor *v, Error **errp);
 void visit_end_carray(Visitor *v, Error **errp);
 
+/* misc. visitors */
+void visit_type_tm(Visitor *m, struct tm *obj, const char *name, Error **errp);
+
 #endif
