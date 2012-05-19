@@ -11,9 +11,9 @@ qc_declaration typedef struct RTCState {
     uint8_t cmos_index;
     struct tm current_tm;
     int32_t base_year;
-    qemu_irq irq;
-    qemu_irq sqw_irq;
-    int32_t it_shift;
+    qemu_irq _immutable irq;
+    qemu_irq _immutable sqw_irq;
+    int32_t _immutable it_shift;
     /* periodic timer */
     QEMUTimer *periodic_timer;
     int64_t next_periodic_time;
