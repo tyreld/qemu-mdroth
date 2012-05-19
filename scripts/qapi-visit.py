@@ -323,10 +323,14 @@ exprs = parse_schema(sys.stdin)
 for expr in exprs:
     if expr.has_key('type'):
         ret = generate_visit_struct(expr['type'], expr['data'])
-        ret += generate_visit_list(expr['type'], expr['data'])
+        if not existing_types:
+            ret += generate_visit_list(expr['type'], expr['data'])
         fdef.write(ret)
 
-        ret = generate_declaration(expr['type'], expr['data'])
+        if existing_types:
+            ret = generate_declaration(expr['type'], expr['data'], False)
+        else:
+            ret = generate_declaration(expr['type'], expr['data'], True)
         fdecl.write(ret)
     elif expr.has_key('union'):
         ret = generate_visit_union(expr['union'], expr['data'])
