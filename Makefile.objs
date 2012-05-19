@@ -467,6 +467,14 @@ qga-obj-y += qemu-ga.o module.o
 qga-obj-$(CONFIG_WIN32) += oslib-win32.o
 qga-obj-$(CONFIG_POSIX) += oslib-posix.o qemu-sockets.o qemu-option.o
 
+######################################################################
+# qidl
+
+qidl-nested-y = rtc-qapi-visit.o
+qidl-obj-y = $(addprefix qapi-generated/, $(qidl-nested-y))
+qidl-obj-y += $(qapi-obj-y) qapi/misc-qapi-visit.o
+
+
 vl.o: QEMU_CFLAGS+=$(GPROF_CFLAGS)
 
 vl.o: QEMU_CFLAGS+=$(SDL_CFLAGS)

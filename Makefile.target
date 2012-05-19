@@ -20,6 +20,9 @@ QEMU_CFLAGS += -I../linux-headers
 endif
 QEMU_CFLAGS += -I.. -I$(TARGET_PATH) -DNEED_CPU_H
 
+qapi-dir := $(BUILD_DIR)/qapi-generated
+QEMU_CFLAGS += -I$(qapi-dir)
+
 include $(SRC_PATH)/Makefile.objs
 
 QEMU_CFLAGS+=-I$(SRC_PATH)/include
@@ -399,6 +402,7 @@ obj-y += $(addprefix ../libdis/, $(libdis-y))
 obj-y += $(libobj-y)
 obj-y += $(addprefix $(HWDIR)/, $(hw-obj-y))
 obj-y += $(addprefix ../, $(trace-obj-y))
+obj-y += $(addprefix ../, $(qidl-obj-y))
 
 endif # CONFIG_SOFTMMU
 
