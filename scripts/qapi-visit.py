@@ -62,7 +62,8 @@ visit_end_struct(m, errp);
         else:
             if annotated:
                 if isinstance(argentry['type'], types.ListType):
-                    ret += generate_visit_array_body(argname, argentry)
+                    ret += ""
+                    #ret += generate_visit_array_body(argname, argentry)
             else:
                 ret += mcgen('''
 visit_type_%(type)s(m, (obj && *obj) ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
