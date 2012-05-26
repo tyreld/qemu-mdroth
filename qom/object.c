@@ -305,6 +305,16 @@ void object_initialize(void *data, const char *typename)
     object_initialize_with_type(data, type);
 }
 
+static inline bool object_property_is_child(ObjectProperty *prop)
+{
+    return strstart(prop->type, "child<", NULL);
+}
+
+static inline bool object_property_is_link(ObjectProperty *prop)
+{
+    return strstart(prop->type, "link<", NULL);
+}
+
 static void object_property_del_all(Object *obj)
 {
     while (!QTAILQ_EMPTY(&obj->properties)) {
@@ -327,7 +337,7 @@ static void object_property_del_child(Object *obj, Object *child, Error **errp)
     ObjectProperty *prop;
 
     QTAILQ_FOREACH(prop, &obj->properties, node) {
-        if (strstart(prop->type, "child<", NULL) && prop->opaque == child) {
+        if (object_property_is_child(prop) && prop->opaque == child) {
             object_property_del(obj, prop->name, errp);
             break;
         }
@@ -600,7 +610,7 @@ int object_child_foreach(Object *obj, int (*fn)(Object *child, void *opaque),
     int ret = 0;
 
     QTAILQ_FOREACH(prop, &obj->properties, node) {
-        if (strstart(prop->type, "child<", NULL)) {
+        if (object_property_is_child(prop)) {
             ret = fn(prop->opaque, opaque);
             if (ret != 0) {
                 break;
@@ -1022,7 +1032,7 @@ gchar *object_get_canonical_path(Object *obj)
         g_assert(obj->parent != NULL);
 
         QTAILQ_FOREACH(prop, &obj->parent->properties, node) {
-            if (!strstart(prop->type, "child<", NULL)) {
+            if (!object_property_is_child(prop)) {
                 continue;
             }
 
@@ -1056,9 +1066,9 @@ Object *object_resolve_path_component(Object *parent, gchar *part)
         return NULL;
     }
 
-    if (strstart(prop->type, "link<", NULL)) {
+    if (object_property_is_link(prop)) {
         return *(Object **)prop->opaque;
-    } else if (strstart(prop->type, "child<", NULL)) {
+    } else if (object_property_is_child(prop)) {
         return prop->opaque;
     } else {
         return NULL;
@@ -1101,7 +1111,7 @@ static Object *object_resolve_partial_path(Object *parent,
     QTAILQ_FOREACH(prop, &parent->properties, node) {
         Object *found;
 
-        if (!strstart(prop->type, "child<", NULL)) {
+        if (!object_property_is_child(prop)) {
             continue;
         }
 
