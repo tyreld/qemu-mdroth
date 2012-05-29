@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "mc146818rtc.h"
 #include "mc146818rtc_state.h"
+#include "qapi-generated/rtc-qapi-visit.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
@@ -589,8 +590,6 @@ static void rtc_get_date(Object *obj, Visitor *v, void *opaque,
     visit_type_int32(v, &s->current_tm.tm_sec, "tm_sec", errp);
     visit_end_struct(v, errp);
 }
-
-#include "qapi-generated/rtc-qapi-visit.h"
 
 static void rtc_get_state(Object *obj, Visitor *v, void *opaque,
                          const char *name, Error **errp)
