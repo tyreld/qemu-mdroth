@@ -19,7 +19,11 @@ import errno
 import types
 
 def generate_visit_array_body(name, info):
+    print name
+    print info
     ret = mcgen('''
+
+/*
 GenericList *%(name)s_i, **%(name)s_prev = (GenericList **)obj;
 size_t i;
 
@@ -32,9 +36,14 @@ for (; (%(name)s_i = visit_next_list(m, %(name)s_prev, errp)) != NULL;
 }
 
 visit_end_list(m, errp);
+
+visit_start_array(m, (void **)&obj, sizeof(%(type)s), %(count)s
+*/
+
 ''',
-                name=name)
+                name=name, type=c_type(info['type']), count=info['array_size'])
     return ret
+    #return ""
 
 def generate_visit_struct_body(field_prefix, members):
     ret = ""
@@ -62,8 +71,7 @@ visit_end_struct(m, errp);
         else:
             if annotated:
                 if isinstance(argentry['type'], types.ListType):
-                    ret += ""
-                    #ret += generate_visit_array_body(argname, argentry)
+                    ret += generate_visit_array_body(argname, argentry)
             else:
                 ret += mcgen('''
 visit_type_%(type)s(m, (obj && *obj) ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
