@@ -181,6 +181,24 @@ static void qmp_output_type_number(Visitor *v, double *obj, const char *name,
     qmp_output_add(qov, name, qfloat_from_double(*obj));
 }
 
+static void qmp_output_start_array(Visitor *v, void **obj, const char *name,
+                                   size_t elem_count, size_t elem_size,
+                                   Error **errp)
+{
+    qmp_output_start_list(v, name, errp);
+}
+
+
+static void qmp_output_next_array(Visitor *v, Error **errp)
+{
+}
+
+static void qmp_output_end_array(Visitor *v, Error **errp)
+{
+    QmpOutputVisitor *qov = to_qov(v);
+    qmp_output_pop(qov);
+}
+
 QObject *qmp_output_get_qobject(QmpOutputVisitor *qov)
 {
     QObject *obj = qmp_output_first(qov);
@@ -228,6 +246,9 @@ QmpOutputVisitor *qmp_output_visitor_new(void)
     v->visitor.type_bool = qmp_output_type_bool;
     v->visitor.type_str = qmp_output_type_str;
     v->visitor.type_number = qmp_output_type_number;
+    v->visitor.start_array = qmp_output_start_array;
+    v->visitor.next_array = qmp_output_next_array;
+    v->visitor.end_array = qmp_output_end_array;
 
     QTAILQ_INIT(&v->stack);
 
