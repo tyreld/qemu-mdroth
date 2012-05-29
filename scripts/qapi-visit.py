@@ -22,28 +22,18 @@ def generate_visit_array_body(name, info):
     print name
     print info
     ret = mcgen('''
-
-/*
-GenericList *%(name)s_i, **%(name)s_prev = (GenericList **)obj;
-size_t i;
-
-visit_start_list(m, name, errp);
-
-for (; (%(name)s_i = visit_next_list(m, %(name)s_prev, errp)) != NULL;
-     %(name)s_prev = &%(name)s_i) {
-    %(name)sList *native_i = (%(name)sList *)i;
-    visit_type_%(name)s(m, &native_i->value, NULL, errp);
+visit_start_array(m, (void **)obj, "%(name)s", %(count)s, sizeof(%(type)s), errp);
+int %(name)s_i;
+for (%(name)s_i = 0; %(name)s_i < %(count)s; %(name)s_i++) {
+    visit_type_%(type_short)s(m, &(*obj)->%(name)s[%(name)s_i], NULL, errp);
+    visit_next_array(m, errp);
 }
-
-visit_end_list(m, errp);
-
-visit_start_array(m, (void **)&obj, sizeof(%(type)s), %(count)s
-*/
-
+visit_end_array(m, errp);
 ''',
-                name=name, type=c_type(info['type']), count=info['array_size'])
+                name=name, type=c_type(info['type'][0]),
+                type_short=info['type'][0],
+                count=info['array_size'])
     return ret
-    #return ""
 
 def generate_visit_struct_body(field_prefix, members):
     ret = ""

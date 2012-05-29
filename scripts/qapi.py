@@ -175,6 +175,8 @@ def c_type(name):
         return 'void'
     elif name == name.upper():
         return '%sEvent *' % camel_case(name)
+    elif name.replace("u", "").replace("int", "") in ["8", "16", "32", "64"]:
+        return name + "_t"
     else:
         return '%s *' % name
 
