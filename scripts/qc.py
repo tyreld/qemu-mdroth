@@ -466,7 +466,8 @@ def qapi_schema(node):
         data[field['variable']] = description
 
     schema['data'] = data
-    print json.dumps(schema, indent=2).replace("\"", "'")
+    print json.dumps(schema).replace("\"", "'")
+
 
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
