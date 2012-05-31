@@ -26,7 +26,7 @@
 #include "sysemu.h"
 #include "mc146818rtc.h"
 #include "mc146818rtc_state.h"
-#include "qapi-generated/rtc-qapi-visit.h"
+#include "qapi-generated/mc146818rtc-qapi-visit.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
