@@ -19,8 +19,6 @@ import errno
 import types
 
 def generate_visit_array_body(name, info):
-    print name
-    print info
     ret = mcgen('''
 visit_start_array(m, (void **)obj, "%(name)s", %(count)s, sizeof(%(type)s), errp);
 int %(name)s_i;
