@@ -1,0 +1,1 @@
+{'type': 'RTCState', 'data': {'cmos_data': {'type': ['uint8'], '<annotated>': 'true', 'array_size': '128'}, 'cmos_index': 'uint8', 'current_tm': 'tm', 'base_year': 'int32', 'periodic_timer': 'QEMUTimer', 'next_periodic_time': 'int64', 'next_second_time': 'int64', 'irq_coalesced': 'uint32', 'period': 'uint32', 'second_timer': 'QEMUTimer', 'second_timer2': 'QEMUTimer'}}
