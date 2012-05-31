@@ -470,8 +470,6 @@ qga-obj-$(CONFIG_POSIX) += oslib-posix.o qemu-sockets.o qemu-option.o
 ######################################################################
 # qidl
 
-qidl-nested-y = rtc-qapi-visit.o
-qidl-obj-y = $(addprefix qapi-generated/, $(qidl-nested-y))
 qidl-obj-y += $(qapi-obj-y) qapi/misc-qapi-visit.o
 
 

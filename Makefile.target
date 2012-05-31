@@ -20,6 +20,7 @@ QEMU_CFLAGS += -I../linux-headers
 endif
 QEMU_CFLAGS += -I.. -I$(TARGET_PATH) -DNEED_CPU_H
 
+qidl-dir := $(SRC_PATH)/qidl-generated
 qapi-dir := $(BUILD_DIR)/qapi-generated
 QEMU_CFLAGS += -I$(qapi-dir)
 
@@ -79,6 +80,35 @@ all: $(PROGS) stap
 	@true
 
 #########################################################
+# QAPI-generated device state visitors
+QIDL_SOURCES_SHORT=hw/mc146818rtc_state.h
+QIDL_SOURCES=$(addprefix $(SRC_PATH)/, $(QIDL_SOURCES_SHORT))
+QIDL_SCHEMAS=$(patsubst %.h,$(qidl-dir)/%.json, $(subst _state,, $(notdir $(QIDL_SOURCES))))
+
+$(QIDL_SCHEMAS) qidl: $(QIDL_SOURCES)
+	mkdir -p $(qidl-dir)
+	for f in $(QIDL_SOURCES); do \
+	json_filename=$(qidl-dir)/`basename $$(basename $$f .h) _state`.json; \
+	$(PYTHON) $(SRC_PATH)/scripts/qc.py < $$f >$$json_filename; \
+	done
+
+QIDL_DEVICES=mc146818rtc.o
+QIDL_DEVICE_VISITORS=$(qapi-dir)/mc146818rtc-qapi-visit.o
+QIDL_DEVICE_VISITOR_SOURCES=$(patsubst %.o,%.c, $(QIDL_DEVICE_VISITORS))
+QIDL_DEVICES_VISITOR_SOURCES+=$(patsubst %.o,%.h, $(QIDL_DEVICE_VISITORS))
+
+$(QIDL_DEVICE_VISITOR_SOURCES): $(QIDL_SCHEMAS) $(SRC_PATH)/scripts/qapi-visit.py
+	echo $(QIDL_SCHEMAS)
+	$(call quiet-command,\
+	$(PYTHON) $(SRC_PATH)/scripts/qapi-visit.py -e -o "$(qapi-dir)" \
+	-i hw/$(patsubst %-qapi-visit,%_state.h, $(basename $(notdir $@))) \
+	-p "$(patsubst %-qapi-visit,%-, $(basename $(notdir $@)))" \
+	< $(qidl-dir)/$(patsubst %-qapi-visit,%.json, $(basename $(notdir $@))), "  GEN   $@")
+
+$(QIDL_DEVICE_VISITORS): $(QIDL_DEVICE_VISITOR_SOURCES)
+$(QIDL_DEVICES): $(QIDL_DEVICE_VISITORS)
+
+#########################################################
 # cpu emulator library
 libobj-y = exec.o translate-all.o cpu-exec.o translate.o
 libobj-y += tcg/tcg.o tcg/optimize.o
@@ -132,6 +162,7 @@ QEMU_CFLAGS+=-I$(SRC_PATH)/linux-user/$(TARGET_ABI_DIR) -I$(SRC_PATH)/linux-user
 obj-y = main.o syscall.o strace.o mmap.o signal.o thunk.o \
       elfload.o linuxload.o uaccess.o gdbstub.o cpu-uname.o \
       user-exec.o $(oslib-obj-y)
+
 
 obj-$(TARGET_HAS_BFLT) += flatload.o
 
@@ -223,7 +254,7 @@ obj-$(CONFIG_IVSHMEM) += ivshmem.o
 obj-y += device-hotplug.o
 
 # Hardware support
-obj-i386-y += mc146818rtc.o pc.o
+obj-i386-y += mc146818rtc.o $(qapi-dir)/mc146818rtc-qapi-visit.o pc.o
 obj-i386-y += apic_common.o apic.o kvmvapic.o
 obj-i386-y += sga.o ioapic_common.o ioapic.o piix_pci.o
 obj-i386-y += vmport.o
