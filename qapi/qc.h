@@ -8,6 +8,7 @@
 #define _derived
 #define _broken
 #define _version(x)
+#define _size_is(x)
 
 /* misc. visitors */
 void visit_type_tm(Visitor *m, struct tm *obj, const char *name, Error **errp);
