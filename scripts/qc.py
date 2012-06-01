@@ -482,7 +482,7 @@ VMSTATE_INT32(%(variable)s.tm_min, RTCState),
 VMSTATE_INT32(%(variable)s.tm_hour, RTCState),
 VMSTATE_INT32(%(variable)s.tm_wday, RTCState),
 VMSTATE_INT32(%(variable)s.tm_mday, RTCState),
-VMSTATE_INT32(%(variable)s.tm_mon, RTC  State),
+VMSTATE_INT32(%(variable)s.tm_mon, RTCState),
 VMSTATE_INT32(%(variable)s.tm_year, RTCState),
 ''',
                                variable=field['variable']).rstrip()
@@ -530,7 +530,7 @@ VMStateField vmstate_%s[] = {
             raise Exception("unable to process field:\n%s\nfrom node:\n%s" % (field, node))
 
         if field.has_key('is_array'):
-            if field.has_key('array_size'):
+            if field.has_key('array_capacity'):
                 vms_field += '_VARRAY'
             else:
                 if vms_type == 'UINT8':
@@ -568,7 +568,7 @@ VMStateField vmstate_%s[] = {
 
     print mcgen('''
     VMSTATE_END_OF_LIST()
-}
+};
 ''',).rstrip()
 
 if __name__ == '__main__':
