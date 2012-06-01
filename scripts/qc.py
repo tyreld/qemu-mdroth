@@ -2,6 +2,7 @@
 
 import sys
 from ordereddict import OrderedDict
+from qapi import *
 
 marker = "qc_declaration"
 marked = False
@@ -468,6 +469,107 @@ def qapi_schema(node):
     schema['data'] = data
     print json.dumps(schema).replace("\"", "'")
 
+def vmstate_field_hacks(node, field):
+    # yes, this is gonna get hairy. may want to move to a seperate file at
+    # some point
+    push_indent()
+    vms_field=""
+    if node.has_key('typedef') and node['typedef'] == 'RTCState':
+        if field['type'] == 'struct tm':
+            vms_field += mcgen('''
+VMSTATE_INT32(%(variable)s.tm_sec, RTCState),
+VMSTATE_INT32(%(variable)s.tm_min, RTCState),
+VMSTATE_INT32(%(variable)s.tm_hour, RTCState),
+VMSTATE_INT32(%(variable)s.tm_wday, RTCState),
+VMSTATE_INT32(%(variable)s.tm_mday, RTCState),
+VMSTATE_INT32(%(variable)s.tm_mon, RTC  State),
+VMSTATE_INT32(%(variable)s.tm_year, RTCState),
+''',
+                               variable=field['variable']).rstrip()
+    pop_indent()
+    return vms_field
+
+def vmstate_fields(node):
+    fields = None
+    state_type = ""
+    vms_primitives = ['INT8', 'INT16', 'INT32', 'INT64', 'UINT8', 'UINT16',
+                      'UINT32', 'UINT64', 'BOOL', 'TIMER']
+    if node.has_key('typedef'):
+        fields = node['type']['fields']
+        state_type = node['typedef']
+    elif node.has_key('struct'):
+        fields = node['fields']
+        state_type = node['struct']
+    else:
+        raise Exception("top-level neither typedef nor struct")
+
+    print mcgen('''
+VMStateField vmstate_%s[] = {
+''' % state_type.lower()).rstrip()
+
+    for field in fields:
+        if field.has_key('is_derived') or field.has_key('is_immutable') or field.has_key('is_broken'):
+            continue
+
+        vms_field_hack = vmstate_field_hacks(node, field)
+        if vms_field_hack:
+            print vms_field_hack
+            continue
+
+        vms_field = "VMSTATE"
+
+        if field['type'].endswith('_t'):
+            vms_type = field['type'][:-2].upper()
+        elif field['type'] == 'int':
+            vms_type = 'INT32'
+        elif field['type'] == 'bool':
+            vms_type = 'BOOL'
+        elif field['type'] == 'QEMUTimer':
+            vms_type = 'TIMER'
+        else:
+            raise Exception("unable to process field:\n%s\nfrom node:\n%s" % (field, node))
+
+        if field.has_key('is_array'):
+            if field.has_key('array_size'):
+                vms_field += '_VARRAY'
+            else:
+                if vms_type == 'UINT8':
+                    vms_field += '_BUFFER'
+                else:
+                    vms_field += '_ARRAY'
+
+        if not vms_field.endswith("_BUFFER"):
+            vms_field += "_" + vms_type
+
+        if field.has_key('version'):
+            vms_field += "_V"
+        else:
+            field['version'] = "0"
+
+        if vms_field in map(lambda x: "VMSTATE_" + x, vms_primitives):
+            vms_field += "(%s, %s)," % (field['variable'], state_type)
+        elif vms_field in map(lambda x: "VMSTATE_" + x + "_V", vms_primitives):
+            vms_field += "(%s, %s, %s)," % (field['variable'], state_type,
+                                            field['version'])
+        elif vms_field == 'VMSTATE_BUFFER':
+            vms_field += "(%s, %s)," % (field['variable'], state_type)
+        elif vms_field in map(lambda x: "VMSTATE_VARRAY_" + x, vms_primitives):
+            args = ", ".join([field['variable'], state_type,
+                             field['array_size'], field['version'],
+                             "vmstate_info_" + field['type'].strip("_t"),
+                             field['type']])
+            vms_field += "(%s)," % args
+        else:
+            raise Exception("unable to process field:\n%s\nfrom node:\n%s" % (field, node))
+
+        push_indent()
+        print cgen(vms_field).rstrip()
+        pop_indent()
+
+    print mcgen('''
+    VMSTATE_END_OF_LIST()
+}
+''',).rstrip()
 
 if __name__ == '__main__':
     la = LookAhead(skip(lexer(Input(sys.stdin))))
@@ -491,4 +593,7 @@ if __name__ == '__main__':
         #qapi_format(node, True)
         #qapi_format(node, False)
         #type_dump(node)
-        qapi_schema(node)
+        if '--vmstate' in sys.argv[1:]:
+            vmstate_fields(node)
+        else:
+            qapi_schema(node)
