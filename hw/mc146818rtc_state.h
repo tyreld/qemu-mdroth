@@ -20,8 +20,8 @@ qc_declaration typedef struct RTCState {
     /* second update */
     int64_t next_second_time;
     uint16_t _derived irq_reinject_on_ack_count;
-    uint32_t irq_coalesced;
-    uint32_t period;
+    uint32_t _version(2) irq_coalesced;
+    uint32_t _version(2) period;
     QEMUTimer _broken *coalesced_timer;
     QEMUTimer *second_timer;
     QEMUTimer *second_timer2;
