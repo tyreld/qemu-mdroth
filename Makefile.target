@@ -22,7 +22,7 @@ QEMU_CFLAGS += -I.. -I$(TARGET_PATH) -DNEED_CPU_H
 
 qidl-dir := $(SRC_PATH)/qidl-generated
 qapi-dir := $(BUILD_DIR)/qapi-generated
-QEMU_CFLAGS += -I$(qapi-dir)
+QEMU_CFLAGS += -I$(qapi-dir) -I$(qidl-dir)
 
 include $(SRC_PATH)/Makefile.objs
 
@@ -74,7 +74,7 @@ else
 stap:
 endif
 
-all: $(PROGS) stap
+all: $(PROGS) stap $(QIDL_VMSTATE)
 
 # Dummy command so that make thinks it has done something
 	@true
@@ -107,6 +107,19 @@ $(QIDL_DEVICE_VISITOR_SOURCES): $(QIDL_SCHEMAS) $(SRC_PATH)/scripts/qapi-visit.p
 
 $(QIDL_DEVICE_VISITORS): $(QIDL_DEVICE_VISITOR_SOURCES)
 $(QIDL_DEVICES): $(QIDL_DEVICE_VISITORS)
+
+#########################################################
+# QIDL-generated vmstate field descriptions
+QIDL_SOURCES_VMSTATE_SHORT=hw/mc146818rtc_state.h
+QIDL_SOURCES_VMSTATE=$(addprefix $(SRC_PATH)/, $(QIDL_SOURCES_VMSTATE_SHORT))
+QIDL_VMSTATE=$(patsubst %.h,$(qidl-dir)/%_vmstate.h, $(subst _state,, $(notdir $(QIDL_SOURCES_VMSTATE))))
+
+$(QIDL_VMSTATE) qidl-vmstate: $(QIDL_SOURCES_VMSTATE)
+	mkdir -p $(qidl-dir)
+	for f in $(QIDL_SOURCES_VMSTATE); do \
+	vmstate_filename=$(qidl-dir)/`basename $$(basename $$f .h) _state`_vmstate.h; \
+	$(PYTHON) $(SRC_PATH)/scripts/qc.py --vmstate < $$f >$$vmstate_filename; \
+	done
 
 #########################################################
 # cpu emulator library
