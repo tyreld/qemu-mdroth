@@ -19,10 +19,20 @@ import errno
 import types
 
 def generate_visit_array_body(name, info):
+    if info.has_key('array_capacity'):
+        array_capacity = info['array_capacity']
+    else:
+        array_capacity = info['array_size']
+
+    if info['array_size'].isdigit():
+        array_size = info['array_size']
+    else:
+        array_size = "(*obj)->%s" % info['array_size']
+
     ret = mcgen('''
-visit_start_array(m, (void **)obj, "%(name)s", %(count)s, sizeof(%(type)s), errp);
+visit_start_array(m, (void **)obj, "%(name)s", %(array_capacity)s, sizeof(%(type)s), errp);
 int %(name)s_i;
-for (%(name)s_i = 0; %(name)s_i < %(count)s; %(name)s_i++) {
+for (%(name)s_i = 0; %(name)s_i < %(array_size)s; %(name)s_i++) {
     visit_type_%(type_short)s(m, &(*obj)->%(name)s[%(name)s_i], NULL, errp);
     visit_next_array(m, errp);
 }
@@ -30,7 +40,8 @@ visit_end_array(m, errp);
 ''',
                 name=name, type=c_type(info['type'][0]),
                 type_short=info['type'][0],
-                count=info['array_size'])
+                array_size=array_size,
+                array_capacity=array_capacity)
     return ret
 
 def generate_visit_struct_body(field_prefix, members):
