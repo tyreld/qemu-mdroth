@@ -85,7 +85,7 @@ QIDL_SOURCES_SHORT=hw/mc146818rtc_state.h
 QIDL_SOURCES=$(addprefix $(SRC_PATH)/, $(QIDL_SOURCES_SHORT))
 QIDL_SCHEMAS=$(patsubst %.h,$(qidl-dir)/%.json, $(subst _state,, $(notdir $(QIDL_SOURCES))))
 
-$(QIDL_SCHEMAS) qidl: $(QIDL_SOURCES)
+$(QIDL_SCHEMAS) qidl: $(QIDL_SOURCES) $(SRC_PATH)/scripts/qc.py
 	mkdir -p $(qidl-dir)
 	for f in $(QIDL_SOURCES); do \
 	json_filename=$(qidl-dir)/`basename $$(basename $$f .h) _state`.json; \
