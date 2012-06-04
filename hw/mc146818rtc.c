@@ -27,6 +27,7 @@
 #include "mc146818rtc.h"
 #include "mc146818rtc_state.h"
 #include "qapi-generated/mc146818rtc-qapi-visit.h"
+#include "mc146818rtc_vmstate.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
@@ -505,25 +506,7 @@ static const VMStateDescription vmstate_rtc = {
     .minimum_version_id = 1,
     .minimum_version_id_old = 1,
     .post_load = rtc_post_load,
-    .fields      = (VMStateField []) {
-        VMSTATE_BUFFER(cmos_data, RTCState),
-        VMSTATE_UINT8(cmos_index, RTCState),
-        VMSTATE_INT32(current_tm.tm_sec, RTCState),
-        VMSTATE_INT32(current_tm.tm_min, RTCState),
-        VMSTATE_INT32(current_tm.tm_hour, RTCState),
-        VMSTATE_INT32(current_tm.tm_wday, RTCState),
-        VMSTATE_INT32(current_tm.tm_mday, RTCState),
-        VMSTATE_INT32(current_tm.tm_mon, RTCState),
-        VMSTATE_INT32(current_tm.tm_year, RTCState),
-        VMSTATE_TIMER(periodic_timer, RTCState),
-        VMSTATE_INT64(next_periodic_time, RTCState),
-        VMSTATE_INT64(next_second_time, RTCState),
-        VMSTATE_TIMER(second_timer, RTCState),
-        VMSTATE_TIMER(second_timer2, RTCState),
-        VMSTATE_UINT32_V(irq_coalesced, RTCState, 2),
-        VMSTATE_UINT32_V(period, RTCState, 2),
-        VMSTATE_END_OF_LIST()
-    }
+    .fields = vmstate_rtcstate,
 };
 
 static void rtc_notify_clock_reset(Notifier *notifier, void *data)
