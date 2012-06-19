@@ -1,5 +1,5 @@
 #
-# QAPI visitor generator
+# QEMU IDL Parser
 #
 # Copyright IBM, Corp. 2012
 #
