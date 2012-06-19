@@ -376,9 +376,13 @@ def parse(la, index=0):
 
     return (next - index), nodes
 
-if __name__ == '__main__':
-    la = LookAhead(skip(lexer(Input(sys.stdin))))
+def parse_file(f):
+    la = LookAhead(skip(lexer(Input(f))))
     _, nodes = parse(la)
+    return nodes
+
+if __name__ == '__main__':
+    nodes = parse_file(sys.stdin)
     print json.dumps(nodes, sort_keys=True, indent=2)
 
     
