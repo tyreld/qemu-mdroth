@@ -1,31 +1,15 @@
 import sys, json
 
 class Input(object):
-    def __init__(self, fp):
-        self.fp = fp
-        self.buf = ''
+    def __init__(self, text):
+        self.fp = text
+        self.buf = text
         self.eof = False
-        self.in_declaration = False
-
-    def get_declaration(self):
-        in_declaration = False
-        while True:
-            line = self.fp.readline()
-            if line == '':
-                self.eof = True
-                break
-            elif line.startswith("QIDL_START("):
-                in_declaration = True
-            elif line.startswith("QIDL_END("):
-                break
-            elif in_declaration:
-                self.buf += line
 
     def pop(self):
         if len(self.buf) == 0:
-            self.get_declaration()
-            if len(self.buf) == 0 and self.eof:
-                return ''
+            self.eof = True
+            return ''
         ch = self.buf[0]
         self.buf = self.buf[1:]
         return ch
@@ -366,27 +350,44 @@ def parse_typedef(la, index):
 def parse(la, index=0):
     next = index
 
-    nodes = []
+    if choice(la, next, 'typedef'):
+        offset, node = parse_typedef(la, next)
+    elif choice(la, next, 'struct'):
+        offset, node = parse_struct(la, next)
+    else:
+        raise Exception("unsupported QIDL declaration")
+
+    next, _ = expect(la, next + offset, 'operator', ';')
+
+    return (next - index), node
+
+def get_declarations(f):
+    in_declaration = False
+    declaration = {
+        'id': None,
+        'text': ''
+    }
     while True:
-        try:
-            if choice(la, next, 'typedef'):
-                offset, node = parse_typedef(la, next)
-            elif choice(la, next, 'struct'):
-                offset, node = parse_struct(la, next)
-            else:
-                raise Exception("unsupported QIDL declaration")
-
-            next, _ = expect(la, next + offset, 'operator', ';')
-        except StopIteration, e:
-            break
-
-        nodes.append(node)
-
-    return (next - index), nodes
+        line = f.readline()
+        if line == '':
+            raise StopIteration()
+        elif line.startswith("QIDL_START("):
+            declaration['id'] = line.replace("QIDL_START(", "")[:-2]
+            in_declaration = True
+        elif line.startswith("QIDL_END("):
+            if declaration['id'] != line.replace("QIDL_END(", "")[:-2]:
+                raise Exception("unterminated QIDL declaration: %s" % declaration['id'])
+            yield declaration
+        elif in_declaration:
+            declaration['text'] += line
 
 def parse_file(f):
-    la = LookAhead(skip(lexer(Input(f))))
-    _, nodes = parse(la)
+    nodes = []
+    for declaration in get_declarations(f):
+        la = LookAhead(skip(lexer(Input(declaration['text']))))
+        _, node = parse(la)
+        node['id'] = declaration['id']
+        nodes.append(node)
     return nodes
 
 if __name__ == '__main__':
