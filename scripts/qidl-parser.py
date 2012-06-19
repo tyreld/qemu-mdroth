@@ -5,19 +5,27 @@ class Input(object):
         self.fp = fp
         self.buf = ''
         self.eof = False
+        self.in_declaration = False
+
+    def get_declaration(self):
+        in_declaration = False
+        while True:
+            line = self.fp.readline()
+            if line == '':
+                self.eof = True
+                break
+            elif line.startswith("QIDL_START("):
+                in_declaration = True
+            elif line.startswith("QIDL_END("):
+                break
+            elif in_declaration:
+                self.buf += line
 
     def pop(self):
         if len(self.buf) == 0:
-            if self.eof:
+            self.get_declaration()
+            if len(self.buf) == 0 and self.eof:
                 return ''
-
-            data = self.fp.read(1024)
-            if data == '':
-                self.eof = True
-                return ''
-
-            self.buf += data
-
         ch = self.buf[0]
         self.buf = self.buf[1:]
         return ch
