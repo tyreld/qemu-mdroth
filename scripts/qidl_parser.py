@@ -8,7 +8,7 @@
 #  Michael Roth    <mdroth@linux.vnet.ibm.com>
 #
 # This work is licensed under the terms of the GNU GPLv2.
-# See the COPYING.LIB file in the top-level directory.
+# See the COPYING file in the top-level directory.
 #
 # The lexer code is based off of:
 #   http://www.lysator.liu.se/c/ANSI-C-grammar-l.html
@@ -376,22 +376,36 @@ def parse(la, index=0):
 
     return (next - index), node
 
+def process_declaration_params(params, declaration={}):
+    declaration['id'] = params[0]
+    declaration['do_state'] = False
+    if "state" in params:
+        declaration['do_state'] = True
+    return declaration
+
+def get_declaration_params(line):
+    params = []
+    for param in line.split("(")[1][:-2].split(","):
+        params.append(param.strip())
+    return params
+
 def get_declarations(f):
     in_declaration = False
-    declaration = {
-        'id': None,
-        'text': ''
-    }
+    declaration = {}
     while True:
         line = f.readline()
         if line == '':
             raise StopIteration()
         elif line.startswith("QIDL_START("):
-            declaration['id'] = line.replace("QIDL_START(", "")[:-2]
+            params = get_declaration_params(line)
+            declaration = process_declaration_params(params, declaration)
+            declaration['text'] = ""
             in_declaration = True
         elif line.startswith("QIDL_END("):
-            if declaration['id'] != line.replace("QIDL_END(", "")[:-2]:
+            params = get_declaration_params(line)
+            if declaration['id'] != params[0]:
                 raise Exception("unterminated QIDL declaration: %s" % declaration['id'])
+            in_declaration = False
             yield declaration
         elif in_declaration:
             declaration['text'] += line
@@ -402,6 +416,7 @@ def parse_file(f):
         la = LookAhead(skip(lexer(Input(declaration['text']))))
         _, node = parse(la)
         node['id'] = declaration['id']
+        node['do_state'] = declaration['do_state']
         nodes.append(node)
     return nodes
 
