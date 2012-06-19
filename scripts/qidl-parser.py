@@ -233,51 +233,36 @@ def choice(la, index, first, second=None):
             return False
     return True
 
+def process_marker(ret, params):
+    marker_type = params[0]
+    if marker_type == "derived":
+        ret['is_derived'] = True
+    elif marker_type == 'immutable':
+        ret['is_immutable'] = True
+    elif marker_type == 'broken':
+        ret['is_broken'] = True
+    elif marker_type == 'size_is':
+        ret['is_array'] = True
+        ret['array_size'] = params[1]
+
+    return ret
+
 def parse_markers(la, index, ret):
     next = index
 
-    found_marker = True
-    while choice(la, next, 'symbol') and found_marker:
-        if choice(la, next, 'symbol', '_derived'):
-            next += 1
-            ret['is_derived'] = True
-        elif choice(la, next, 'symbol', '_immutable'):
-            next += 1
-            ret['is_immutable'] = True
-        elif choice(la, next, 'symbol', '_broken'):
-            next += 1
-            ret['is_broken'] = True
-        elif choice(la, next, 'symbol', '_size_is'):
-            next += 1
+    while choice(la, next, 'symbol', 'QIDL'):
+        params = []
+        next += 1
 
-            next, _ = expect(la, next, 'operator', '(')
-            next, array_size = expect(la, next, 'symbol')
-            next, _ = expect(la, next, 'operator', ')')
+        next, _ = expect(la, next, 'operator', '(')
+        while not choice(la, next, 'operator', ')'):
+            next, param = expect(la, next, 'symbol')
+            params.append(param)
+            if choice(la, next, 'operator', ','):
+                next += 1
+        next, _ = expect(la, next, 'operator', ')')
 
-            ret['is_array'] = True
-            ret['array_size'] = 's->%s' % array_size
-        elif choice(la, next, 'symbol', '_default'):
-            next += 1
-
-            next, _ = expect(la, next, 'operator', '(')
-            next, default = expect(la, next, 'literal')
-            next, _ = expect(la, next, 'operator', ')')
-
-            ret['default'] = default
-        elif choice(la, next, 'symbol', '_type_of'):
-            next += 1
-
-            next, _ = expect(la, next, 'operator', '(')
-            next, typename = expect(la, next, 'symbol')
-            next, _ = expect(la, next, 'operator', ')')
-
-            ret['is_container'] = True
-            ret['type_of'] = typename
-        else:
-            found_marker = False
-
-    if ret['type'] in ['GSList']:
-        ret['is_container'] = True
+        ret = process_marker(ret, params)
 
     return (next - index), ret
 
