@@ -376,22 +376,39 @@ def parse(la, index=0):
 
     return (next - index), node
 
+def process_declaration_params(params, declaration={}):
+    if "state" in params:
+        declaration['do_state'] = True
+    if "vmstate" in params:
+        declaration['do_vmstate'] = True
+    if "properties" in params:
+        declaration['do_properties'] = True
+    declaration['id'] = params[0]
+    return declaration
+
+def get_declaration_params(line):
+    params = []
+    for param in line.split("(")[1][:-2].split(","):
+        params.append(param.strip())
+    return params
+
 def get_declarations(f):
     in_declaration = False
-    declaration = {
-        'id': None,
-        'text': ''
-    }
+    declaration = {}
     while True:
         line = f.readline()
         if line == '':
             raise StopIteration()
         elif line.startswith("QIDL_START("):
-            declaration['id'] = line.replace("QIDL_START(", "")[:-2]
+            params = get_declaration_params(line)
+            declaration = process_declaration_params(params, declaration)
+            declaration['text'] = ""
             in_declaration = True
         elif line.startswith("QIDL_END("):
-            if declaration['id'] != line.replace("QIDL_END(", "")[:-2]:
+            params = get_declaration_params(line)
+            if declaration['id'] != params[0]:
                 raise Exception("unterminated QIDL declaration: %s" % declaration['id'])
+            in_declaration = False
             yield declaration
         elif in_declaration:
             declaration['text'] += line
