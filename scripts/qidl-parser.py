@@ -355,30 +355,6 @@ def parse_typedef(la, index):
 
     return (next - index), { 'typedef': typename, 'type': node }
 
-def parse_func_decl(la, index):
-    next = index
-
-    off, returns = parse_type(la, index)
-    next += off
-
-    next, name = expect(la, next, 'symbol')
-    next, _ = expect(la, next, 'operator', '(')
-
-    args = []
-    while not choice(la, next, 'operator', ')'):
-        if len(args) != 0:
-            next, _ = expect(la, next, 'operator', ',')
-
-        off, arg = parse_var_decl(la, next)
-        next += off
-        args.append(arg)
-
-    next, _ = expect(la, next, 'operator', ')')
-
-    ret = { 'returns': returns, 'func': name, 'args': args }
-
-    return (next - index), ret
-
 def parse(la, index=0):
     next = index
 
@@ -390,7 +366,7 @@ def parse(la, index=0):
             elif choice(la, next, 'struct'):
                 offset, node = parse_struct(la, next)
             else:
-                offset, node = parse_func_decl(la, next)
+                raise Exception("unsupported QIDL declaration")
 
             next, _ = expect(la, next + offset, 'operator', ';')
         except StopIteration, e:
