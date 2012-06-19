@@ -393,6 +393,3 @@ def parse_file(f):
 if __name__ == '__main__':
     nodes = parse_file(sys.stdin)
     print json.dumps(nodes, sort_keys=True, indent=2)
-
-    
-
