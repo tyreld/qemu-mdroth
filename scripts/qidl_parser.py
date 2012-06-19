@@ -405,6 +405,9 @@ def parse_file(f):
         nodes.append(node)
     return nodes
 
-if __name__ == '__main__':
+def main():
     nodes = parse_file(sys.stdin)
     print json.dumps(nodes, sort_keys=True, indent=2)
+
+if __name__ == '__main__':
+    main()
