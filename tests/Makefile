@@ -52,8 +52,8 @@ tests/test-coroutine$(EXESUF): tests/test-coroutine.o $(coroutine-obj-y) $(tools
 tests/test-iov$(EXESUF): tests/test-iov.o iov.o
 
 tests/test-qapi-types.c tests/test-qapi-types.h :\
-$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-types.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-types.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi_types.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_types.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
 tests/test-qapi-visit.c tests/test-qapi-visit.h :\
 $(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi_visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_visit.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
