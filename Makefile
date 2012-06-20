@@ -188,8 +188,8 @@ qapi-generated/qga-qapi-visit.c qapi-generated/qga-qapi-visit.h :\
 $(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi-visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-visit.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
 qapi-generated/qga-qmp-commands.h qapi-generated/qga-qmp-marshal.c :\
-$(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi-commands.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi_commands.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_commands.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
 
 qapi-types.c qapi-types.h :\
 $(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi_types.py
@@ -198,8 +198,8 @@ qapi-visit.c qapi-visit.h :\
 $(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi_visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_visit.py $(gen-out-type) -o "."  < $<, "  GEN   $@")
 qmp-commands.h qmp-marshal.c :\
-$(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi-commands.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -m -o "." < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi_commands.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_commands.py $(gen-out-type) -m -o "." < $<, "  GEN   $@")
 
 QGALIB_OBJ=$(addprefix qapi-generated/, qga-qapi-types.o qga-qapi-visit.o qga-qmp-marshal.o)
 QGALIB_GEN=$(addprefix qapi-generated/, qga-qapi-types.h qga-qapi-visit.h qga-qmp-commands.h)
