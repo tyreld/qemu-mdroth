@@ -12,6 +12,8 @@
 
 from ordereddict import OrderedDict
 from qidl_parser import parse_file
+from qapi import parse_schema
+from qapi_visit import generate_visit_struct
 import sys
 import json
 import getopt
@@ -57,15 +59,19 @@ def qapi_schema(node):
     schema['data'] = data
     return schema
 
+def parse_schema_file(filename):
+    return parse_schema(open(filename, 'r'))
+
 def main(argv=[]):
     try:
         opts, args = getopt.gnu_getopt(argv[1:], "svpd:f:",
                                        ["state", "vmstate", "properties",
-                                        "output_dir=", "output_file="])
+                                        "output-dir=", "output-file="])
     except getopt.GetoptError, err:
         print >> sys.stderr, err
         return 1
 
+    output_file = None
     output_dir = ""
     do_state = False
     do_vmstate = False
@@ -81,12 +87,24 @@ def main(argv=[]):
             output_dir = a
         elif o in ("-f", "--output-file"):
             output_file = a
-    
+
+    if not output_file:
+        print >> sys.stderr, "must specify --output-file"
+        return 1
+
     nodes = parse_file(sys.stdin)
     for node in nodes:
         if do_state:
+            # create schema
             schema = qapi_schema(node)
-            print json.dumps(schema).replace("\"", "'")
+            schema_file_path = output_dir + node['id'] + ".json"
+            schema_file = open(schema_file_path, 'w')
+            schema_file.write(json.dumps(schema).replace("\"", "'"))
+            schema_file.close()
+            # process schema and generate visitor
+            expr = parse_schema_file(schema_file_path)[0]
+            print generate_visit_struct(expr['type'], expr['data'])
+            visit_file_path = output_dir + node['id'] + ".c"
 
     return 0
 
