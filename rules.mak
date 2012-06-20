@@ -14,6 +14,10 @@ MAKEFLAGS += -rR
 # Flags for dependency generation
 QEMU_DGFLAGS += -MMD -MP -MT $@ -MF $(*D)/$(*F).d
 
+# if it's a QIDL-fied file, build the generated visitor into the object
+%.qidl.o: %.c
+	$(call quiet-command,$(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -include $< -c -o $@ $(BUILD_DIR)/qapi-generated/$(notdir $*-qapi-visit.c),"  CC    $(TARGET_DIR)$@")
+
 %.o: %.c
 	$(call quiet-command,$(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c -o $@ $<,"  CC    $(TARGET_DIR)$@")
 
