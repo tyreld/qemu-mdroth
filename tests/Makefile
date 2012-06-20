@@ -58,8 +58,8 @@ tests/test-qapi-visit.c tests/test-qapi-visit.h :\
 $(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi_visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_visit.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
 tests/test-qmp-commands.h tests/test-qmp-marshal.c :\
-$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-commands.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi_commands.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_commands.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
 
 
 tests/test-string-output-visitor$(EXESUF): tests/test-string-output-visitor.o $(test-qapi-obj-y)
