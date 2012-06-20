@@ -182,8 +182,8 @@ include $(SRC_PATH)/tests/Makefile
 endif
 
 qapi-generated/qga-qapi-types.c qapi-generated/qga-qapi-types.h :\
-$(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi-types.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-types.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi_types.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_types.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
 qapi-generated/qga-qapi-visit.c qapi-generated/qga-qapi-visit.h :\
 $(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi-visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-visit.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
@@ -192,8 +192,8 @@ $(SRC_PATH)/qapi-schema-guest.json $(SRC_PATH)/scripts/qapi-commands.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -o qapi-generated -p "qga-" < $<, "  GEN   $@")
 
 qapi-types.c qapi-types.h :\
-$(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi-types.py
-	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-types.py $(gen-out-type) -o "." < $<, "  GEN   $@")
+$(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi_types.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_types.py $(gen-out-type) -o "." < $<, "  GEN   $@")
 qapi-visit.c qapi-visit.h :\
 $(SRC_PATH)/qapi-schema.json $(SRC_PATH)/scripts/qapi_visit.py
 	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi_visit.py $(gen-out-type) -o "."  < $<, "  GEN   $@")
