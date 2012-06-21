@@ -3290,6 +3290,7 @@ if test "$debug_tcg" = "yes" ; then
 fi
 if test "$debug" = "yes" ; then
   echo "CONFIG_DEBUG_EXEC=y" >> $config_host_mak
+  echo "CONFIG_DEBUG_QIDL=y" >> $config_host_mak
 fi
 if test "$strip_opt" = "yes" ; then
   echo "STRIP=${strip}" >> $config_host_mak

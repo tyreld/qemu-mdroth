@@ -264,6 +264,8 @@ clean:
 	if test -d $$d; then $(MAKE) -C $$d $@ || exit 1; fi; \
 	rm -f $$d/qemu-options.def; \
         done
+	find -name '*.qidl.c' -exec rm -f {} \;
+	find -name '*.qidl.schema' -exec rm -f {} \;
 
 VERSION ?= $(shell cat VERSION)
 
@@ -435,6 +437,7 @@ qemu-doc.dvi qemu-doc.html qemu-doc.info qemu-doc.pdf: \
 ifneq ($(filter-out %clean,$(MAKECMDGOALS)),$(if $(MAKECMDGOALS),,fail))
 Makefile: $(GENERATED_HEADERS)
 endif
+
 
 # Include automatically generated dependency files
 # Dependencies in Makefile.objs files come from our recursive subdir rules

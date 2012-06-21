@@ -17,6 +17,7 @@ check-unit-y += tests/test-visitor-serialization$(EXESUF)
 check-unit-y += tests/test-iov$(EXESUF)
 check-unit-y += tests/test-aio$(EXESUF)
 check-unit-y += tests/test-thread-pool$(EXESUF)
+check-unit-y += tests/test-qidl$(EXESUF)
 
 check-block-$(CONFIG_POSIX) += tests/qemu-iotests-quick.sh
 
@@ -36,11 +37,12 @@ test-obj-y = tests/check-qint.o tests/check-qstring.o tests/check-qdict.o \
 	tests/test-coroutine.o tests/test-string-output-visitor.o \
 	tests/test-string-input-visitor.o tests/test-qmp-output-visitor.o \
 	tests/test-qmp-input-visitor.o tests/test-qmp-input-strict.o \
-	tests/test-qmp-commands.o tests/test-visitor-serialization.o
+	tests/test-qmp-commands.o tests/test-visitor-serialization.o \
+	tests/test-qidl.o
 
 test-qapi-obj-y =  $(qobject-obj-y) $(qapi-obj-y) qemu-tool.o
 test-qapi-obj-y += tests/test-qapi-visit.o tests/test-qapi-types.o
-test-qapi-obj-y += module.o
+test-qapi-obj-y += module.o $(qom-obj-y) cutils.o
 
 $(test-obj-y): QEMU_INCLUDES += -Itests
 
@@ -87,6 +89,8 @@ check-qtest-$(CONFIG_POSIX)=$(foreach TARGET,$(TARGETS), $(check-qtest-$(TARGET)
 
 qtest-obj-y = tests/libqtest.o $(oslib-obj-y) libqemustub.a
 $(check-qtest-y): $(qtest-obj-y)
+
+tests/test-qidl$(EXESUF): tests/test-qidl.o tests/test-qidl-linked.o tests/test-qidl-pub-linked.o $(test-qapi-obj-y) qapi/misc-qapi-visit.o
 
 .PHONY: check-help
 check-help:
