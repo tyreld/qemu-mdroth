@@ -15,7 +15,20 @@ MAKEFLAGS += -rR
 QEMU_DGFLAGS += -MMD -MP -MT $@ -MF $(*D)/$(*F).d
 
 %.o: %.c
-	$(call quiet-command,$(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c -o $@ $<,"  CC    $(TARGET_DIR)$@")
+
+%.qidl.c: %.c $(SRC_PATH)/qidl.h $(addprefix $(SRC_PATH)/scripts/,qidl.py qidl_parser.py qapi.py qapi_visit.py)
+	$(call rm -f $(*D)/qidl-generated/$(*F).qidl.c)
+	$(call quiet-command, $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(CFLAGS) -E -c -DQIDL_GEN $< | \
+	  $(PYTHON) $(SRC_PATH)/scripts/qidl.py --output-filepath=$(*D)/qidl-generated/$(*F).qidl.c || [ "$$?" -eq 2 ])
+
+%.o: %.c %.qidl.c
+	$(if $(strip $(shell test -f $(*D)/qidl-generated/$(*F).qidl.c && echo "true")), \
+	  $(call quiet-command, \
+	    $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c \
+	      -include $< -o $@ $(*D)/qidl-generated/$(*F).qidl.c,"qidl CC $@"), \
+	  $(call quiet-command, \
+	    $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c \
+	      -o $@ $<,"  CC    $@"))
 
 ifeq ($(LIBTOOL),)
 %.lo: %.c
