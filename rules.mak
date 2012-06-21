@@ -14,8 +14,33 @@ MAKEFLAGS += -rR
 # Flags for dependency generation
 QEMU_DGFLAGS += -MMD -MP -MT $@ -MF $(*D)/$(*F).d
 
+# Debug options for QIDL
+ifdef CONFIG_DEBUG_QIDL
+QIDL_FLAGS = --schema-filepath=$(*D)/$(*F).qidl.schema
+endif
+
+.SECONDARY:
+
 %.o: %.c
-	$(call quiet-command,$(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c -o $@ $<,"  CC    $(TARGET_DIR)$@")
+
+%.qidl.c: %.c $(SRC_PATH)/qidl.h $(addprefix $(SRC_PATH)/scripts/,lexer.py qidl.py qidl_parser.py qapi.py qapi_visit.py)
+	@rm -f $(*D)/$(*F).qidl.*
+	$(if $(strip $(shell grep "QIDL_ENABLE()" $< 1>/dev/null && echo "true")), \
+	  $(call quiet-command, \
+	    $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(CFLAGS) -E -c -DQIDL_GEN $< | \
+	    $(PYTHON) $(SRC_PATH)/scripts/qidl.py $(QIDL_FLAGS) \
+	    --output-filepath=$(*D)/$(*F).qidl.c || [ "$$?" -eq 2 ], \
+	    "qidl PP $(*D)/$(*F).c"),)
+
+%.o: %.c %.qidl.c
+	$(if $(strip $(shell test -f $(*D)/$(*F).qidl.c && echo "true")), \
+	  $(call quiet-command, \
+	    $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c \
+		-DQIDL_ENABLED -include $< -o $@ $(*D)/$(*F).qidl.c, \
+		"qidl CC $@"), \
+	  $(call quiet-command, \
+	    $(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c \
+	      -o $@ $<,"  CC    $@"))
 
 ifeq ($(LIBTOOL),)
 %.lo: %.c
