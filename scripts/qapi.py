@@ -37,6 +37,12 @@ def tokenize(data):
                 else:
                     string += ch
             yield string
+        elif ch.isdigit():
+            number = ch
+            while data[0].isdigit():
+                number += data[0]
+                data = data[1:]
+            yield number
 
 def parse(tokens):
     if tokens[0] == '{':
@@ -81,7 +87,7 @@ def parse_schema(fp):
         if line.startswith('#') or line == '\n':
             continue
 
-        if line.startswith(' '):
+        if line[0] in ['}', ']', ' ', '\t']:
             expr += line
         elif expr:
             expr_eval = evaluate(expr)
