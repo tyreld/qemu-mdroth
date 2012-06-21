@@ -236,6 +236,7 @@ clean:
 	if test -d $$d; then $(MAKE) -C $$d $@ || exit 1; fi; \
 	rm -f $$d/qemu-options.def; \
         done
+	find -depth -name qidl-generated -type d -exec rm -rf {} \;
 
 VERSION ?= $(shell cat VERSION)
 
@@ -404,6 +405,7 @@ qemu-doc.dvi qemu-doc.html qemu-doc.info qemu-doc.pdf: \
 # Add a dependency on the generated files, so that they are always
 # rebuilt before other object files
 Makefile: $(GENERATED_HEADERS)
+
 
 # Include automatically generated dependency files
 # Dependencies in Makefile.objs files come from our recursive subdir rules
