@@ -25,6 +25,7 @@
 #include "qemu-timer.h"
 #include "sysemu.h"
 #include "mc146818rtc.h"
+#include "qidl.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
@@ -47,31 +48,35 @@
 
 #define RTC_REINJECT_ON_ACK_COUNT 20
 
+QIDL_START(RTCState, state, properties)
 typedef struct RTCState {
-    ISADevice dev;
-    MemoryRegion io;
+    ISADevice dev QIDL(immutable);
+    MemoryRegion io QIDL(immutable);
     uint8_t cmos_data[128];
     uint8_t cmos_index;
     struct tm current_tm;
-    int32_t base_year;
-    qemu_irq irq;
-    qemu_irq sqw_irq;
-    int it_shift;
+    int32_t base_year QIDL(property, "base_year", 1980);
+    qemu_irq irq QIDL(immutable);
+    qemu_irq sqw_irq QIDL(immutable);
+    int it_shift QIDL(immutable);
     /* periodic timer */
     QEMUTimer *periodic_timer;
     int64_t next_periodic_time;
     /* second update */
     int64_t next_second_time;
-    uint16_t irq_reinject_on_ack_count;
+    uint16_t irq_reinject_on_ack_count QIDL(broken);
     uint32_t irq_coalesced;
     uint32_t period;
-    QEMUTimer *coalesced_timer;
+    bool has_coalesced_timer QIDL(immutable);
+    QEMUTimer *coalesced_timer QIDL(optional);
     QEMUTimer *second_timer;
     QEMUTimer *second_timer2;
-    Notifier clock_reset_notifier;
-    LostTickPolicy lost_tick_policy;
-    Notifier suspend_notifier;
+    Notifier clock_reset_notifier QIDL(broken);
+    LostTickPolicy lost_tick_policy QIDL(immutable) \
+        QIDL(property, "lost_tick_policy", LOST_TICK_DISCARD);
+    Notifier suspend_notifier QIDL(broken);
 } RTCState;
+QIDL_END(RTCState)
 
 static void rtc_set_time(RTCState *s);
 static void rtc_copy_date(RTCState *s);
@@ -615,6 +620,14 @@ static void rtc_get_date(Object *obj, Visitor *v, void *opaque,
     visit_end_struct(v, errp);
 }
 
+static void rtc_get_state(Object *obj, Visitor *v, void *opaque,
+                          const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    RTCState *s = DO_UPCAST(RTCState, dev, isa);
+    QIDL_VISIT_TYPE(RTCState, v, &s, name, errp);
+}
+
 static int rtc_initfn(ISADevice *dev)
 {
     RTCState *s = DO_UPCAST(RTCState, dev, dev);
@@ -627,9 +640,11 @@ static int rtc_initfn(ISADevice *dev)
 
     rtc_set_date_from_host(dev);
 
+
 #ifdef TARGET_I386
     switch (s->lost_tick_policy) {
     case LOST_TICK_SLEW:
+        s->has_coalesced_timer = true;
         s->coalesced_timer =
             qemu_new_timer_ns(rtc_clock, rtc_coalesced_timer, s);
         break;
@@ -662,6 +677,9 @@ static int rtc_initfn(ISADevice *dev)
 
     object_property_add(OBJECT(s), "date", "struct tm",
                         rtc_get_date, NULL, NULL, s, NULL);
+    object_property_add(OBJECT(s), "state", "RTCState",
+                        rtc_get_state, NULL, NULL, s, NULL);
+    QIDL_SCHEMA_ADD_LINK(RTCState, OBJECT(s), "state_schema", NULL);
 
     return 0;
 }
@@ -683,13 +701,6 @@ ISADevice *rtc_init(ISABus *bus, int base_year, qemu_irq intercept_irq)
     return dev;
 }
 
-static Property mc146818rtc_properties[] = {
-    DEFINE_PROP_INT32("base_year", RTCState, base_year, 1980),
-    DEFINE_PROP_LOSTTICKPOLICY("lost_tick_policy", RTCState,
-                               lost_tick_policy, LOST_TICK_DISCARD),
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void rtc_class_initfn(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -697,7 +708,7 @@ static void rtc_class_initfn(ObjectClass *klass, void *data)
     ic->init = rtc_initfn;
     dc->no_user = 1;
     dc->vmsd = &vmstate_rtc;
-    dc->props = mc146818rtc_properties;
+    dc->props = QIDL_PROPERTIES(RTCState);
 }
 
 static TypeInfo mc146818rtc_info = {
