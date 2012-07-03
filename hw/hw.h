@@ -65,4 +65,14 @@ int qemu_boot_set(const char *boot_devices);
 
 #endif
 
+/* QIDL! */
+#include "qidl.h"
+QIDL_START(SuperCommon, state)
+typedef struct SuperCommon {
+    int32_t a;
+    uint32_t QIDL(property, "b", 2) b;
+    int32_t QIDL(immutable) c;
+} SuperCommon;
+QIDL_END(SuperCommon)
+
 #endif
