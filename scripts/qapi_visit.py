@@ -141,13 +141,16 @@ visit_end_optional(m, &err);
 ''')
     return ret
 
-def generate_visit_struct(name, members):
+def generate_visit_struct(name, members, static=False):
+    ret_type = "void"
+    if static:
+        ret_type = "static " + ret_type
     ret = mcgen('''
 
-void visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **errp)
+%(ret_type)s visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **errp)
 {
 ''',
-                name=name)
+                name=name, ret_type=ret_type)
 
     push_indent()
     ret += generate_visit_struct_body("", name, members)
@@ -158,10 +161,13 @@ void visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **
 ''')
     return ret
 
-def generate_visit_list(name, members):
+def generate_visit_list(name, members, static=False):
+    ret_type = "void"
+    if static:
+        ret_type = "static " + ret_type
     return mcgen('''
 
-void visit_type_%(name)sList(Visitor *m, %(name)sList ** obj, const char *name, Error **errp)
+%(ret_type)s visit_type_%(name)sList(Visitor *m, %(name)sList ** obj, const char *name, Error **errp)
 {
     GenericList *i, **prev = (GenericList **)obj;
     Error *err = NULL;
@@ -183,19 +189,22 @@ void visit_type_%(name)sList(Visitor *m, %(name)sList ** obj, const char *name, 
     }
 }
 ''',
-                name=name)
+                name=name, ret_type=ret_type)
 
-def generate_visit_enum(name, members):
+def generate_visit_enum(name, members, static=False):
+    ret_type = "void"
+    if static:
+        ret_type = "static " + ret_type
     return mcgen('''
 
-void visit_type_%(name)s(Visitor *m, %(name)s * obj, const char *name, Error **errp)
+%(ret_type)s visit_type_%(name)s(Visitor *m, %(name)s * obj, const char *name, Error **errp)
 {
     visit_type_enum(m, (int *)obj, %(name)s_lookup, "%(name)s", name, errp);
 }
 ''',
-                 name=name)
+                 name=name, ret_type=ret_type)
 
-def generate_visit_union(name, members):
+def generate_visit_union(name, members, static=False):
     ret = generate_visit_enum('%sKind' % name, members.keys())
 
     ret += mcgen('''
@@ -252,27 +261,33 @@ void visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **
 
     return ret
 
-def generate_declaration(name, members, genlist=True):
+def generate_declaration(name, members, genlist=True, static=False):
+    ret_type = "void"
+    if static:
+        ret_type = "static " + ret_type
     ret = mcgen('''
 
-void visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **errp);
+%(ret_type)s visit_type_%(name)s(Visitor *m, %(name)s ** obj, const char *name, Error **errp);
 ''',
-                name=name)
+                name=name, ret_type=ret_type)
 
     if genlist:
         ret += mcgen('''
-void visit_type_%(name)sList(Visitor *m, %(name)sList ** obj, const char *name, Error **errp);
+%(ret_type)s visit_type_%(name)sList(Visitor *m, %(name)sList ** obj, const char *name, Error **errp);
 ''',
-                 name=name)
+                 name=name, ret_type=ret_type)
 
     return ret
 
-def generate_decl_enum(name, members, genlist=True):
+def generate_decl_enum(name, members, genlist=True, static=False):
+    ret_type = "void"
+    if static:
+        ret_type = "static " + ret_type
     return mcgen('''
 
-void visit_type_%(name)s(Visitor *m, %(name)s * obj, const char *name, Error **errp);
+%(ret_type)s visit_type_%(name)s(Visitor *m, %(name)s * obj, const char *name, Error **errp);
 ''',
-                name=name)
+                name=name, ret_type=ret_type)
 
 def main(argv=[]):
     try:
