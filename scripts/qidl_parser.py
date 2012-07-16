@@ -379,8 +379,11 @@ def parse(la, index=0):
 def process_declaration_params(params, declaration={}):
     declaration['id'] = params[0]
     declaration['do_state'] = False
+    declaration['do_properties'] = False
     if "state" in params:
         declaration['do_state'] = True
+    if "properties" in params:
+        declaration['do_properties'] = True
     return declaration
 
 def get_declaration_params(line):
@@ -417,6 +420,7 @@ def parse_file(f):
         _, node = parse(la)
         node['id'] = declaration['id']
         node['do_state'] = declaration['do_state']
+        node['do_properties'] = declaration['do_properties']
         nodes.append(node)
     return nodes
 
