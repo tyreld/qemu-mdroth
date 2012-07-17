@@ -2412,6 +2412,7 @@ int main(int argc, char **argv, char **envp)
     }
 
     module_call_init(MODULE_INIT_QOM);
+    module_call_init(MODULE_INIT_QIDL);
 
     runstate_init();
 

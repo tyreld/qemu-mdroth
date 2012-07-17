@@ -25,6 +25,7 @@ typedef enum {
     MODULE_INIT_MACHINE,
     MODULE_INIT_QAPI,
     MODULE_INIT_QOM,
+    MODULE_INIT_QIDL,
     MODULE_INIT_MAX
 } module_init_type;
 
@@ -32,6 +33,7 @@ typedef enum {
 #define machine_init(function) module_init(function, MODULE_INIT_MACHINE)
 #define qapi_init(function) module_init(function, MODULE_INIT_QAPI)
 #define type_init(function) module_init(function, MODULE_INIT_QOM)
+#define qidl_init(function) module_init(function, MODULE_INIT_QIDL)
 
 void register_module_init(void (*fn)(void), module_init_type type);
 
