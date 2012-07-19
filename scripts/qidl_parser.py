@@ -251,6 +251,8 @@ def process_marker(ret, params):
     elif marker_type == 'size_is':
         ret['is_array'] = True
         ret['array_size'] = params[1]
+    elif marker_type == 'optional':
+        ret['is_optional'] = True
 
     return ret
 
