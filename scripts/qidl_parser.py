@@ -253,6 +253,9 @@ def process_marker(ret, params):
         ret['array_size'] = params[1]
     elif marker_type == 'optional':
         ret['is_optional'] = True
+    elif marker_type == 'property':
+        ret['is_property'] = True
+        ret['property_fields'] = params[1:]
 
     return ret
 
@@ -265,7 +268,10 @@ def parse_markers(la, index, ret):
 
         next, _ = expect(la, next, 'operator', '(')
         while not choice(la, next, 'operator', ')'):
-            next, param = expect(la, next, 'symbol')
+            if choice(la, next, 'symbol'):
+                next, param = expect(la, next, 'symbol')
+            else:
+                next, param = expect(la, next, 'literal')
             params.append(param)
             if choice(la, next, 'operator', ','):
                 next += 1
