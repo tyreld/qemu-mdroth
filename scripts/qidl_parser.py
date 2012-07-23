@@ -293,6 +293,14 @@ def parse_type(la, index):
         typename += 'struct '
         next += 1
 
+    if choice(la, next, 'unsigned', 'unsigned'):
+        typename += 'unsigned '
+        next += 1
+
+    if choice(la, next, 'union', 'union'):
+        typename += 'unsigned '
+        next += 1
+
     next, rest = expect(la, next, 'symbol')
     typename += rest
 
@@ -307,26 +315,48 @@ def parse_type(la, index):
 
     return (next - index), ret
 
-def parse_var_decl(la, index):
+def parse_var_decl(la, index, repeating_type=None):
     next = index
 
-    off, ret = parse_type(la, next)
-    next += off
+    if repeating_type == None:
+        off, ret = parse_type(la, next)
+        next += off
+    else:
+        ret = { 'type': repeating_type }
 
-    next, variable = expect(la, next, 'symbol')
+    if choice(la, next, 'operator', '('):
+        ret['is_function'] = True
+        next += 1
+        next, _ = expect(la, next, 'operator', '*')
+        next, variable = expect(la, next, 'symbol')
+        next, _ = expect(la, next, 'operator', ')')
+
+        # skip the param list since we don't use it currently
+        next, _ = expect(la, next, 'operator', '(')
+        open_parens = 1
+        while open_parens:
+            if choice(la, next, 'operator', '('):
+                open_parens += 1
+            elif choice(la, next, 'operator', ')'):
+                open_parens -= 1
+            next += 1
+    else:
+        next, variable = expect(la, next, 'symbol')
     ret['variable'] = variable
 
     if choice(la, next, 'operator', '['):
         next += 1
+        expression = ""
+        while not choice(la, next, 'operator', ']'):
+            expression += la.at(next)[1]
+            next += 1
+        next, _ = expect(la, next, 'operator', ']')
 
         if not ret.has_key('is_array'):
             ret['is_array'] = True
-            ret['array_size'] = la.at(next)[1]
+            ret['array_size'] = expression
         else:
-            ret['array_capacity'] = la.at(next)[1]
-        next += 1
-
-        next, _ = expect(la, next, 'operator', ']')
+            ret['array_capacity'] = expression
 
     off, ret = parse_markers(la, next, ret)
     next += off
@@ -351,6 +381,11 @@ def parse_struct(la, index):
         offset, node = parse_var_decl(la, next)
         next += offset
         nodes.append(node)
+        while choice(la, next, 'operator', ','):
+            next += 1
+            offset, node = parse_var_decl(la, next, node['type'])
+            next += offset
+            nodes.append(node)
 
         next, _ = expect(la, next, 'operator', ';')
 
