@@ -281,6 +281,7 @@ int msix_init(struct PCIDevice *dev, unsigned short nentries,
     dev->msix_entry_used = g_malloc0(MSIX_MAX_ENTRIES *
                                         sizeof *dev->msix_entry_used);
 
+    dev->msix_table_page_size = MSIX_PAGE_SIZE;
     dev->msix_table_page = g_malloc0(MSIX_PAGE_SIZE);
     msix_mask_all(dev, nentries);
 
@@ -301,6 +302,7 @@ err_config:
     memory_region_destroy(&dev->msix_mmio);
     g_free(dev->msix_table_page);
     dev->msix_table_page = NULL;
+    dev->msix_table_page_size = 0;
     g_free(dev->msix_entry_used);
     dev->msix_entry_used = NULL;
     return ret;
@@ -330,6 +332,7 @@ int msix_uninit(PCIDevice *dev, MemoryRegion *bar)
     memory_region_destroy(&dev->msix_mmio);
     g_free(dev->msix_table_page);
     dev->msix_table_page = NULL;
+    dev->msix_table_page_size = 0;
     g_free(dev->msix_entry_used);
     dev->msix_entry_used = NULL;
     dev->cap_present &= ~QEMU_PCI_CAP_MSIX;
