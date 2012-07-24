@@ -267,15 +267,25 @@ def parse_markers(la, index, ret):
         next += 1
 
         next, _ = expect(la, next, 'operator', '(')
-        while not choice(la, next, 'operator', ')'):
-            if choice(la, next, 'symbol'):
-                next, param = expect(la, next, 'symbol')
-            else:
-                next, param = expect(la, next, 'literal')
-            params.append(param)
+        open_parens = 1
+        param = ""
+        while open_parens:
             if choice(la, next, 'operator', ','):
+                params.append(param)
+                param = ""
                 next += 1
-        next, _ = expect(la, next, 'operator', ')')
+                continue
+
+            if choice(la, next, 'operator', '('):
+                open_parens += 1
+            elif choice(la, next, 'operator', ')'):
+                open_parens -= 1
+
+            if open_parens > 0:
+                param += la.at(next)[1]
+            next += 1
+        if param != "":
+            params.append(param)
 
         ret = process_marker(ret, params)
 
