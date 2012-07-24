@@ -26,6 +26,7 @@ class QOMFS(Fuse):
         self.qmp.connect()
         self.ino_map = {}
         self.ino_count = 1
+        self.prop_cache = {}
 
     def get_ino(self, path):
         if self.ino_map.has_key(path):
@@ -67,12 +68,16 @@ class QOMFS(Fuse):
         if not self.is_property(path):
             return -ENOENT
 
-        path, prop = path.rsplit('/', 1)
-        try:
-            data = str(self.qmp.command('qom-get', path=path, property=prop))
-            data += '\n' # make values shell friendly
-        except:
-            return -EPERM
+        # avoid extra calls to qom-get by using cached value when offset > 0
+        if offset == 0 or not self.prop_cache.has_key(path):
+            directory, prop = path.rsplit('/', 1)
+            try:
+                resp = str(self.qmp.command('qom-get', path=directory, property=prop))
+                self.prop_cache[path] = resp + '\n' # make values shell friendly
+            except:
+                return -EPERM
+
+        data = self.prop_cache[path]
 
         if offset > len(data):
             return ''
@@ -111,13 +116,18 @@ class QOMFS(Fuse):
                                        0,
                                        0))
         elif self.is_property(path):
+            directory, prop = path.rsplit('/', 1)
+            try:
+                resp = str(self.qmp.command('qom-get', path=directory, property=prop))
+            except:
+                return -ENOENT
             value = posix.stat_result((0644 | stat.S_IFREG,
                                        self.get_ino(path),
                                        0,
                                        1,
                                        1000,
                                        1000,
-                                       4096,
+                                       max(len(resp) * 2, 4096),
                                        0,
                                        0,
                                        0))
