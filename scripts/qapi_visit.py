@@ -107,6 +107,15 @@ if (obj && (*obj)->%(prefix)shas_%(c_name)s) {
             if annotated:
                 if isinstance(argentry['type'], types.ListType):
                     ret += generate_visit_carray_body(argname, argentry)
+                elif argentry.has_key('<embedded struct>'):
+                    tmp_ptr_name = "%s_%s_ptr" % (c_var(field_prefix).replace(".", ""), c_var(argname))
+                    ret += mcgen('''
+%(type)s *%(tmp_ptr)s = &(*obj)->%(c_prefix)s%(c_name)s;
+visit_type_%(type)s(m, (obj && *obj) ? &%(tmp_ptr)s : NULL, "%(name)s", errp);
+''',
+                                 c_prefix=c_var(field_prefix), prefix=field_prefix,
+                                 type=type_name(argentry['type']), c_name=c_var(argname),
+                                 name=argname, tmp_ptr=tmp_ptr_name)
             else:
                 ret += mcgen('''
 visit_type_%(type)s(m, obj ? &(*obj)->%(c_prefix)s%(c_name)s : NULL, "%(name)s", errp);
