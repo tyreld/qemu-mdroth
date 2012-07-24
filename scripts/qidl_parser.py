@@ -283,6 +283,7 @@ def parse_markers(la, index, ret):
 
 def parse_type(la, index):
     next = index
+    ret = {}
 
     typename = ''
     if choice(la, next, 'const', 'const'):
@@ -298,13 +299,30 @@ def parse_type(la, index):
         next += 1
 
     if choice(la, next, 'union', 'union'):
-        typename += 'unsigned '
+        typename += 'union '
         next += 1
 
-    next, rest = expect(la, next, 'symbol')
-    typename += rest
+    if choice(la, next, 'enum', 'enum'):
+        typename += 'enum '
+        next += 1
 
-    ret = { 'type': typename }
+    # we don't currently handle embedded struct declarations, skip them for now
+    if choice(la, next, 'operator', '{'):
+        open_braces = 1
+        while open_braces:
+            next += 1
+            if choice(la, next, 'operator', '{'):
+                open_braces += 1
+            elif choice(la, next, 'operator', '}'):
+                open_braces -= 1
+        next += 1
+        typename += "<anon>"
+        ret['is_nested_decl'] = True
+    else:
+        next, rest = expect(la, next, 'symbol')
+        typename += rest
+
+    ret['type'] = typename
 
     off, ret = parse_markers(la, next, ret)
     next += off
