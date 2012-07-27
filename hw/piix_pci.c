@@ -71,18 +71,19 @@ typedef struct PAMMemoryRegion {
     bool initialized;
 } PAMMemoryRegion;
 
+QIDL_START(PCII440FXState, state)
 struct PCII440FXState {
     PCIDevice dev;
-    MemoryRegion *system_memory;
-    MemoryRegion *pci_address_space;
-    MemoryRegion *ram_memory;
-    MemoryRegion pci_hole;
-    MemoryRegion pci_hole_64bit;
-    PAMMemoryRegion pam_regions[13];
-    MemoryRegion smram_region;
+    MemoryRegion *system_memory QIDL(immutable);
+    MemoryRegion *pci_address_space QIDL(immutable);
+    MemoryRegion *ram_memory QIDL(immutable);
+    MemoryRegion pci_hole QIDL(immutable);
+    MemoryRegion pci_hole_64bit QIDL(immutable);
+    PAMMemoryRegion pam_regions[13] QIDL(immutable);
+    MemoryRegion smram_region QIDL(immutable);
     uint8_t smm_enabled;
 };
-
+QIDL_END(PCII440FXState)
 
 #define I440FX_PAM      0x59
 #define I440FX_PAM_SIZE 7
@@ -240,6 +241,14 @@ static int i440fx_pcihost_initfn(SysBusDevice *dev)
     return 0;
 }
 
+static void i440fx_get_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCII440FXState *s = DO_UPCAST(PCII440FXState, dev, pci);
+    QIDL_VISIT_TYPE(PCII440FXState, v, &s, name, errp);
+}
+
 static int i440fx_initfn(PCIDevice *dev)
 {
     PCII440FXState *d = DO_UPCAST(PCII440FXState, dev, dev);
@@ -247,6 +256,11 @@ static int i440fx_initfn(PCIDevice *dev)
     d->dev.config[I440FX_SMRAM] = 0x02;
 
     cpu_smm_register(&i440fx_set_smm, d);
+
+    object_property_add(OBJECT(d), "state", "PCII440FXState",
+                        i440fx_get_state, NULL, NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PCII440FXState, OBJECT(d), "state_schema", NULL);
+
     return 0;
 }
 

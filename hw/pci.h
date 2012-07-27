@@ -187,38 +187,41 @@ typedef int (*MSIVectorUseNotifier)(PCIDevice *dev, unsigned int vector,
                                       MSIMessage msg);
 typedef void (*MSIVectorReleaseNotifier)(PCIDevice *dev, unsigned int vector);
 
+QIDL_START(PCIDevice, state)
 struct PCIDevice {
-    DeviceState qdev;
+    DeviceState qdev QIDL(immutable);
 
     /* PCI config space */
-    uint8_t *config;
+    uint8_t *config \
+        QIDL(size_is, (pci_is_express(*obj) ? \
+                       PCIE_CONFIG_SPACE_SIZE : PCI_CONFIG_SPACE_SIZE));
 
     /* Used to enable config checks on load. Note that writable bits are
      * never checked even if set in cmask. */
-    uint8_t *cmask;
+    uint8_t *cmask QIDL(immutable);
 
     /* Used to implement R/W bytes */
-    uint8_t *wmask;
+    uint8_t *wmask QIDL(immutable);
 
     /* Used to implement RW1C(Write 1 to Clear) bytes */
-    uint8_t *w1cmask;
+    uint8_t *w1cmask QIDL(immutable);
 
     /* Used to allocate config space for capabilities. */
-    uint8_t *used;
+    uint8_t *used QIDL(immutable);
 
     /* the following fields are read only */
-    PCIBus *bus;
-    int32_t devfn;
-    char name[64];
-    PCIIORegion io_regions[PCI_NUM_REGIONS];
-    DMAContext *dma;
+    PCIBus *bus QIDL(immutable);
+    int32_t devfn QIDL(immutable);
+    char name[64] QIDL(immutable);
+    PCIIORegion io_regions[PCI_NUM_REGIONS] QIDL(immutable);
+    DMAContext *dma QIDL(immutable);
 
     /* do not access the following fields */
-    PCIConfigReadFunc *config_read;
-    PCIConfigWriteFunc *config_write;
+    PCIConfigReadFunc *config_read QIDL(immutable);
+    PCIConfigWriteFunc *config_write QIDL(immutable);
 
     /* IRQ objects for the INTA-INTD pins.  */
-    qemu_irq *irq;
+    qemu_irq *irq QIDL(immutable);
 
     /* Current IRQ levels.  Used internally by the generic PCI code.  */
     uint8_t irq_state;
@@ -233,15 +236,17 @@ struct PCIDevice {
     int msix_entries_nr;
 
     /* Space to store MSIX table & pending bit array */
-    uint8_t *msix_table;
-    uint8_t *msix_pba;
+    int32_t msix_table_size;
+    uint8_t *msix_table QIDL(size_is, msix_table_size);
+    int32_t msix_pba_size;
+    uint8_t *msix_pba QIDL(size_is, msix_pba_size);
     /* MemoryRegion container for msix exclusive BAR setup */
-    MemoryRegion msix_exclusive_bar;
+    MemoryRegion msix_exclusive_bar QIDL(immutable);
     /* Memory Regions for MSIX table and pending bit entries. */
-    MemoryRegion msix_table_mmio;
-    MemoryRegion msix_pba_mmio;
+    MemoryRegion msix_table_mmio QIDL(immutable);
+    MemoryRegion msix_pba_mmio QIDL(immutable);
     /* Reference-count for entries actually in use by driver. */
-    unsigned *msix_entry_used;
+    unsigned *msix_entry_used QIDL(immutable);
     /* MSIX function mask set or MSIX disabled */
     bool msix_function_masked;
     /* Version id needed for VMState */
@@ -251,24 +256,25 @@ struct PCIDevice {
     uint8_t msi_cap;
 
     /* PCI Express */
-    PCIExpressDevice exp;
+    PCIExpressDevice exp QIDL(immutable);
 
     /* SHPC */
-    SHPCDevice *shpc;
+    SHPCDevice *shpc QIDL(immutable);
 
     /* Location of option rom */
-    char *romfile;
+    char *romfile QIDL(immutable);
     bool has_rom;
-    MemoryRegion rom;
+    MemoryRegion rom QIDL(immutable);
     uint32_t rom_bar;
 
     /* INTx routing notifier */
-    PCIINTxRoutingNotifier intx_routing_notifier;
+    PCIINTxRoutingNotifier intx_routing_notifier QIDL(immutable);
 
     /* MSI-X notifiers */
-    MSIVectorUseNotifier msix_vector_use_notifier;
-    MSIVectorReleaseNotifier msix_vector_release_notifier;
+    MSIVectorUseNotifier msix_vector_use_notifier QIDL(immutable);
+    MSIVectorReleaseNotifier msix_vector_release_notifier QIDL(immutable);
 };
+QIDL_END(PCIDevice)
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
                       uint8_t attr, MemoryRegion *memory);
