@@ -33,14 +33,16 @@
 /***********************************************************/
 /* ISA IDE definitions */
 
+QIDL_START(ISAIDEState, state)
 typedef struct ISAIDEState {
-    ISADevice dev;
+    ISADevice dev QIDL(immutable);
     IDEBus    bus;
     uint32_t  iobase;
     uint32_t  iobase2;
     uint32_t  isairq;
-    qemu_irq  irq;
+    qemu_irq  irq QIDL(immutable);
 } ISAIDEState;
+QIDL_END(ISAIDEState)
 
 static void isa_ide_reset(DeviceState *d)
 {
@@ -61,6 +63,22 @@ static const VMStateDescription vmstate_ide_isa = {
     }
 };
 
+static void isa_ide_get_state(Object *obj, Visitor *v, void *opaque,
+                                   const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    ISAIDEState *s = DO_UPCAST(ISAIDEState, dev, isa);
+    QIDL_VISIT_TYPE(ISAIDEState, v, &s, name, errp);
+}
+
+static void isa_ide_set_state(Object *obj, Visitor *v, void *opaque,
+                                   const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    ISAIDEState *s = DO_UPCAST(ISAIDEState, dev, isa);
+    QIDL_VISIT_TYPE(ISAIDEState, v, &s, name, errp);
+}
+
 static int isa_ide_initfn(ISADevice *dev)
 {
     ISAIDEState *s = DO_UPCAST(ISAIDEState, dev, dev);
@@ -70,6 +88,10 @@ static int isa_ide_initfn(ISADevice *dev)
     isa_init_irq(dev, &s->irq, s->isairq);
     ide_init2(&s->bus, s->irq);
     vmstate_register(&dev->qdev, 0, &vmstate_ide_isa, s);
+    object_property_add(OBJECT(s), "state", "ISAIDEState",
+                        isa_ide_get_state, isa_ide_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(ISAIDEState, OBJECT(s), "state_schema", NULL);
     return 0;
 };
 
