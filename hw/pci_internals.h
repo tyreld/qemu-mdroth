@@ -15,30 +15,32 @@
 #define TYPE_PCI_BUS "PCI"
 #define PCI_BUS(obj) OBJECT_CHECK(PCIBus, (obj), TYPE_PCI_BUS)
 
+QIDL_START(PCIBus, state)
 struct PCIBus {
-    BusState qbus;
-    PCIDMAContextFunc dma_context_fn;
-    void *dma_context_opaque;
-    uint8_t devfn_min;
-    pci_set_irq_fn set_irq;
-    pci_map_irq_fn map_irq;
-    pci_route_irq_fn route_intx_to_irq;
-    pci_hotplug_fn hotplug;
-    DeviceState *hotplug_qdev;
-    void *irq_opaque;
-    PCIDevice *devices[PCI_SLOT_MAX * PCI_FUNC_MAX];
-    PCIDevice *parent_dev;
-    MemoryRegion *address_space_mem;
-    MemoryRegion *address_space_io;
+    BusState qbus QIDL(immutable);
+    PCIDMAContextFunc dma_context_fn QIDL(immutable);
+    void *dma_context_opaque QIDL(broken);
+    uint8_t devfn_min QIDL(immutable);
+    pci_set_irq_fn set_irq QIDL(immutable);
+    pci_map_irq_fn map_irq QIDL(immutable);
+    pci_route_irq_fn route_intx_to_irq QIDL(immutable);
+    pci_hotplug_fn hotplug QIDL(immutable);
+    DeviceState *hotplug_qdev QIDL(immutable);
+    void *irq_opaque QIDL(immutable);
+    PCIDevice *devices[PCI_SLOT_MAX * PCI_FUNC_MAX] QIDL(immutable);
+    PCIDevice *parent_dev QIDL(immutable);
+    MemoryRegion *address_space_mem QIDL(immutable);
+    MemoryRegion *address_space_io QIDL(immutable);
 
-    QLIST_HEAD(, PCIBus) child; /* this will be replaced by qdev later */
-    QLIST_ENTRY(PCIBus) sibling;/* this will be replaced by qdev later */
+    QLIST_HEAD(, PCIBus) child QIDL(immutable); /* this will be replaced by qdev later */
+    QLIST_ENTRY(PCIBus) sibling QIDL(immutable);/* this will be replaced by qdev later */
 
     /* The bus IRQ state is the logical OR of the connected devices.
        Keep a count of the number of devices with raised IRQs.  */
     int nirq;
-    int *irq_count;
+    int *irq_count QIDL(size_is, nirq);
 };
+QIDL_END(PCIBus)
 
 struct PCIBridge {
     PCIDevice dev;

@@ -273,6 +273,14 @@ int pci_find_domain(const PCIBus *bus)
     return -1;
 }
 
+static void pcibus_get_state(Object *obj, Visitor *v, void *opaque,
+                             const char *name, Error **errp)
+{
+    PCIBus *pci_bus = PCI_BUS(obj);
+
+    QIDL_VISIT_TYPE(PCIBus, v, &pci_bus, name, errp);
+}
+
 void pci_bus_new_inplace(PCIBus *bus, DeviceState *parent,
                          const char *name,
                          MemoryRegion *address_space_mem,
@@ -290,6 +298,10 @@ void pci_bus_new_inplace(PCIBus *bus, DeviceState *parent,
     pci_host_bus_register(0, bus); /* for now only pci domain 0 is supported */
 
     vmstate_register(NULL, -1, &vmstate_pcibus, bus);
+
+    object_property_add(OBJECT(bus), "state", "PCIBus",
+                        pcibus_get_state, NULL, NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PCIBus, OBJECT(bus), "state_schema", NULL);
 }
 
 PCIBus *pci_bus_new(DeviceState *parent, const char *name,
