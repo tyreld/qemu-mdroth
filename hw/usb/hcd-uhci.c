@@ -113,15 +113,18 @@ struct UHCIQueue {
     int8_t    valid;
 };
 
+QIDL_START(UHCIPort, state)
 typedef struct UHCIPort {
-    USBPort port;
+    USBPort port QIDL(immutable);
     uint16_t ctrl;
 } UHCIPort;
+QIDL_END(UHCIPort)
 
+QIDL_START(UHCIState, state)
 struct UHCIState {
     PCIDevice dev;
-    MemoryRegion io_bar;
-    USBBus bus; /* Note unused when we're a companion controller */
+    MemoryRegion io_bar QIDL(immutable);
+    USBBus bus QIDL(immutable); /* Note unused when we're a companion controller */
     uint16_t cmd; /* cmd register */
     uint16_t status;
     uint16_t intr; /* interrupt enable register */
@@ -131,7 +134,7 @@ struct UHCIState {
     uint8_t status2; /* bit 0 and 1 are used to generate UHCI_STS_USBINT */
     int64_t expire_time;
     QEMUTimer *frame_timer;
-    QEMUBH *bh;
+    QEMUBH *bh QIDL(immutable);
     uint32_t frame_bytes;
     uint32_t frame_bandwidth;
     UHCIPort ports[NB_PORTS];
@@ -141,13 +144,14 @@ struct UHCIState {
     int irq_pin;
 
     /* Active packets */
-    QTAILQ_HEAD(, UHCIQueue) queues;
+    QTAILQ_HEAD(, UHCIQueue) queues QIDL(immutable);
     uint8_t num_ports_vmstate;
 
     /* Properties */
     char *masterbus;
     uint32_t firstport;
 };
+QIDL_END(UHCIState)
 
 typedef struct UHCI_TD {
     uint32_t link;
@@ -1195,6 +1199,22 @@ static USBPortOps uhci_port_ops = {
 static USBBusOps uhci_bus_ops = {
 };
 
+static void usb_uhci_get_state(Object *obj, Visitor *v, void *opaque,
+                               const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    UHCIState *s = DO_UPCAST(UHCIState, dev, pci);
+    QIDL_VISIT_TYPE(UHCIState, v, &s, name, errp);
+}
+
+static void usb_uhci_set_state(Object *obj, Visitor *v, void *opaque,
+                               const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    UHCIState *s = DO_UPCAST(UHCIState, dev, pci);
+    QIDL_VISIT_TYPE(UHCIState, v, &s, name, errp);
+}
+
 static int usb_uhci_common_initfn(PCIDevice *dev)
 {
     PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(dev);
@@ -1250,6 +1270,11 @@ static int usb_uhci_common_initfn(PCIDevice *dev)
     /* Use region 4 for consistency with real hardware.  BSD guests seem
        to rely on this.  */
     pci_register_bar(&s->dev, 4, PCI_BASE_ADDRESS_SPACE_IO, &s->io_bar);
+
+    object_property_add(OBJECT(s), "state", "UHCIState",
+                        usb_uhci_get_state, usb_uhci_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(UHCIState, OBJECT(s), "state_schema", NULL);
 
     return 0;
 }
