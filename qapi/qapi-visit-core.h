@@ -43,6 +43,10 @@ struct Visitor
     void (*type_str)(Visitor *v, char **obj, const char *name, Error **errp);
     void (*type_number)(Visitor *v, double *obj, const char *name,
                         Error **errp);
+    void (*start_carray)(Visitor *v, void **obj, const char *name,
+                        size_t elem_count, size_t elem_size, Error **errp);
+    void (*next_carray)(Visitor *v, Error **errp);
+    void (*end_carray)(Visitor *v, Error **errp);
 
     /* May be NULL */
     void (*start_optional)(Visitor *v, bool *present, const char *name,
@@ -91,5 +95,9 @@ void visit_type_size(Visitor *v, uint64_t *obj, const char *name, Error **errp);
 void visit_type_bool(Visitor *v, bool *obj, const char *name, Error **errp);
 void visit_type_str(Visitor *v, char **obj, const char *name, Error **errp);
 void visit_type_number(Visitor *v, double *obj, const char *name, Error **errp);
+void visit_start_carray(Visitor *v, void **obj, const char *name,
+                       size_t elem_count, size_t elem_size, Error **errp);
+void visit_next_carray(Visitor *v, Error **errp);
+void visit_end_carray(Visitor *v, Error **errp);
 
 #endif
