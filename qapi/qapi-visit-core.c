@@ -311,3 +311,28 @@ void input_type_enum(Visitor *v, int *obj, const char *strings[],
     g_free(enum_str);
     *obj = value;
 }
+
+void visit_start_carray(Visitor *v, void **obj, const char *name,
+                        size_t elem_count, size_t elem_size, Error **errp)
+{
+    g_assert(v->start_carray);
+    if (!error_is_set(errp)) {
+        v->start_carray(v, obj, name, elem_count, elem_size, errp);
+    }
+}
+
+void visit_next_carray(Visitor *v, Error **errp)
+{
+    g_assert(v->next_carray);
+    if (!error_is_set(errp)) {
+        v->next_carray(v, errp);
+    }
+}
+
+void visit_end_carray(Visitor *v, Error **errp)
+{
+    g_assert(v->end_carray);
+    if (!error_is_set(errp)) {
+        v->end_carray(v, errp);
+    }
+}
