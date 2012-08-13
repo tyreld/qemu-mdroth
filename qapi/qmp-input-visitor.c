@@ -132,7 +132,7 @@ static void qmp_input_start_struct(Visitor *v, void **obj, const char *kind,
         return;
     }
 
-    if (obj) {
+    if (obj && *obj == NULL) {
         *obj = g_malloc0(size);
     }
 }
@@ -274,6 +274,33 @@ static void qmp_input_start_optional(Visitor *v, bool *present,
     *present = true;
 }
 
+static void qmp_input_start_carray(Visitor *v, void **obj, const char *name,
+                                   size_t elem_count, size_t elem_size,
+                                   Error **errp)
+{
+    if (obj && *obj == NULL) {
+        *obj = g_malloc0(elem_count * elem_size);
+    }
+    qmp_input_start_list(v, name, errp);
+}
+
+static void qmp_input_next_carray(Visitor *v, Error **errp)
+{
+    QmpInputVisitor *qiv = to_qiv(v);
+    StackObject *so = &qiv->stack[qiv->nb_stack - 1];
+
+    if (so->entry == NULL) {
+        so->entry = qlist_first(qobject_to_qlist(so->obj));
+    } else {
+        so->entry = qlist_next(so->entry);
+    }
+}
+
+static void qmp_input_end_carray(Visitor *v, Error **errp)
+{
+    qmp_input_end_list(v, errp);
+}
+
 Visitor *qmp_input_get_visitor(QmpInputVisitor *v)
 {
     return &v->visitor;
@@ -302,6 +329,9 @@ QmpInputVisitor *qmp_input_visitor_new(QObject *obj)
     v->visitor.type_str = qmp_input_type_str;
     v->visitor.type_number = qmp_input_type_number;
     v->visitor.start_optional = qmp_input_start_optional;
+    v->visitor.start_carray = qmp_input_start_carray;
+    v->visitor.next_carray = qmp_input_next_carray;
+    v->visitor.end_carray = qmp_input_end_carray;
 
     qmp_input_push(v, obj, NULL);
     qobject_incref(obj);
