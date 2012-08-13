@@ -46,17 +46,6 @@ static char *pcibus_get_dev_path(DeviceState *dev);
 static char *pcibus_get_fw_dev_path(DeviceState *dev);
 static int pcibus_reset(BusState *qbus);
 
-static Property pci_props[] = {
-    DEFINE_PROP_PCI_DEVFN("addr", PCIDevice, devfn, -1),
-    DEFINE_PROP_STRING("romfile", PCIDevice, romfile),
-    DEFINE_PROP_UINT32("rombar",  PCIDevice, rom_bar, 1),
-    DEFINE_PROP_BIT("multifunction", PCIDevice, cap_present,
-                    QEMU_PCI_CAP_MULTIFUNCTION_BITNR, false),
-    DEFINE_PROP_BIT("command_serr_enable", PCIDevice, cap_present,
-                    QEMU_PCI_CAP_SERR_BITNR, true),
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static void pci_bus_class_init(ObjectClass *klass, void *data)
 {
     BusClass *k = BUS_CLASS(klass);
@@ -2078,7 +2067,7 @@ static void pci_device_class_init(ObjectClass *klass, void *data)
     k->unplug = pci_unplug_device;
     k->exit = pci_unregister_device;
     k->bus_type = TYPE_PCI_BUS;
-    k->props = pci_props;
+    k->props = QIDL_PROPERTIES(PCIDevice);
 }
 
 void pci_setup_iommu(PCIBus *bus, PCIDMAContextFunc fn, void *opaque)

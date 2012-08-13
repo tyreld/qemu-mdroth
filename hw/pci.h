@@ -187,7 +187,7 @@ typedef int (*MSIVectorUseNotifier)(PCIDevice *dev, unsigned int vector,
                                       MSIMessage msg);
 typedef void (*MSIVectorReleaseNotifier)(PCIDevice *dev, unsigned int vector);
 
-QIDL_START(PCIDevice, state)
+QIDL_START(PCIDevice, state, properties)
 struct PCIDevice {
     DeviceState qdev QIDL(immutable);
 
@@ -211,7 +211,7 @@ struct PCIDevice {
 
     /* the following fields are read only */
     PCIBus *bus QIDL(immutable);
-    int32_t devfn QIDL(immutable);
+    int32_t devfn QIDL(immutable) QIDL(property, "addr", -1);
     char name[64] QIDL(immutable);
     PCIIORegion io_regions[PCI_NUM_REGIONS] QIDL(immutable);
     DMAContext *dma QIDL(immutable);
@@ -227,7 +227,11 @@ struct PCIDevice {
     uint8_t irq_state;
 
     /* Capability bits */
-    uint32_t cap_present;
+    uint32_t cap_present \
+        QIDL(property, "multifunction", \
+             QEMU_PCI_CAP_MULTIFUNCTION_BITNR, false) \
+        QIDL(property, "command_serr_enable", \
+             QEMU_PCI_CAP_SERR_BITNR, true);
 
     /* Offset of MSI-X capability in config space */
     uint8_t msix_cap;
@@ -262,10 +266,10 @@ struct PCIDevice {
     SHPCDevice *shpc QIDL(immutable);
 
     /* Location of option rom */
-    char *romfile QIDL(immutable);
+    char *romfile QIDL(immutable) QIDL(property, "romfile");
     bool has_rom;
     MemoryRegion rom QIDL(immutable);
-    uint32_t rom_bar;
+    uint32_t rom_bar QIDL(property, "rombar", 1);
 
     /* INTx routing notifier */
     PCIINTxRoutingNotifier intx_routing_notifier QIDL(immutable);
