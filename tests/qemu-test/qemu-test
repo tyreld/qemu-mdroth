@@ -23,8 +23,10 @@ elif test $target_arch = i586; then
     machine=pc
 fi
 
-kernel=/usr/local/share/qemu-jeos/kernel-$target_arch-$machine
-initrd=/usr/local/share/qemu-jeos/initramfs-$target_arch-$machine.img.gz
+#kernel=${QEMU_JEOS_DIR:-"/usr/local/share/qemu-jeos"}/kernel-$target_arch-$machine
+kernel=${QEMU_JEOS_DIR:-"/usr/local/share/qemu-jeos"}/build-i586-pc/vmlinuz
+#initrd=${QEMU_JEOS_DIR:-"/usr/local/share/qemu-jeos"}/build-i586-pc/initramfs-$target_arch-$machine.img.gz
+initrd=${QEMU_JEOS_DIR:-"/usr/local/share/qemu-jeos"}/build-i586-pc/initramfs.img.gz
 #kernel=bin/vmlinuz-3.0
 #initrd=bin/initramfs-1.9.2.img.gz
 
