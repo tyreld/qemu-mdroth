@@ -50,7 +50,7 @@ tmpinitrd=$tmpdir/initramfs-$$.img.gz
 tmplog=$tmpdir/logfile-$$.log
 tmppid=$tmpdir/pidfile-$$.pid
 tmpqmp=$tmpdir/qmpsock-$$.sock
-tmprc=$tmpdir/rc.out
+tmprc=$tmpdir/rc-$$.out
 
 if test "$QEMU_TEST_SEED"; then
     seed=$QEMU_TEST_SEED
