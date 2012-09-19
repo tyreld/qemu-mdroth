@@ -134,5 +134,16 @@ class QOMFS(Fuse):
 if __name__ == '__main__':
     import sys, os
 
-    fs = QOMFS(QEMUMonitorProtocol(os.environ['QMP_SOCKET']))
-    fs.main(sys.argv)
+    fuse_flags = list(sys.argv)
+    mount_point = None
+
+    if not fuse_flags[-1].startswith('-'):
+        mount_point = fuse_flags.pop()
+
+    # force single-threaded behavior to avoid races for QMP responses
+    if not '-s' in fuse_flags:
+        fuse_flags.append('-s')
+
+    fs = QOMFS(QEMUMonitorProtocol(os.environ['QMP_SOCKET']), dash_s_do='setsingle')
+    fs.parse(fuse_flags + (mount_point and [mount_point] or []))
+    fs.main()
