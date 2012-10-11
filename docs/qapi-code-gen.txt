@@ -22,38 +22,160 @@ This document will describe how the schemas, scripts, and resulting
 code is used.
 
 
-== QMP/Guest agent schema ==
+== QAPI/QMP/Guest agent schema ==
 
-This file defines the types, commands, and events used by QMP.  It should
-fully describe the interface used by QMP.
+QAPI schema files define the types, commands, and events used by QMP and
+the QEMU guest agent, and should fully describe their interfaces.  QAPI
+schemas may be used for other purposes as well, but QMP and the guest agent
+are the primary use-cases.
 
-This file is designed to be loosely based on JSON although it's technically
-executable Python.  While dictionaries are used, they are parsed as
+Schema files are designed to be loosely based on JSON, although technically
+they are executable Python.  While dictionaries are used, they are parsed as
 OrderedDicts so that ordering is preserved.
 
 There are two basic syntaxes used, type definitions and command definitions.
 
-The first syntax defines a type and is represented by a dictionary.  There are
-two kinds of types that are supported: complex user-defined types, and enums.
+The first syntax defines a user-defined/named type and is represented by a
+dictionary.  There are currently 3 kinds of user-defined/named types that are
+supported: complex types, unions, and enums.  Complex types and unions are
+composed of other complex types/unions/enums, lists thereof, or
+internally-defined types as described below.
 
-A complex type is a dictionary containing a single key who's value is a
-dictionary.  This corresponds to a struct in C or an Object in JSON.  An
-example of a complex type is:
+NOTE: The value of a argument's/member's field in the schema defines the
+member's type in any native C interfaces/types generated from the schema.
+Non-native/external/wire interfaces will sometimes use alternative encodings
+to represent the field values; QMP for instance uses JSON 'Number' types, as
+defined by IETF RFC4627, to represent the internally-defined 'int'/'double'
+types described below to external users, which QEMU internally converts to
+64-bit signed integers, and then to the specific internally-defined/native C
+type described by the schema, and vice-versa).
+
+This document does not attempt to describe the structure of data as represented
+by these "external" interfaces (since, how QAPI is exposed externally is
+dependent on Visitor "plug-ins", such as QMP, which are free to use whatever
+encodings/representations are appropriate for the use-cases they serve).
+
+Instead, we describe here only the abstract, internal representations that
+QAPI is built around, and, in some cases, the native C representations that
+those representations ultimately map to.
+
+=== Complex types ===
+
+A complex type is a dictionary with one of more keys.  This corresponds to a
+struct in C or an Object in JSON.  An example of a complex type is:
 
  { 'type': 'MyType',
    'data': { 'member1': 'str', 'member2': 'int', '*member3': 'str' } }
+
+In this example we've defined 'MyType' to be a dictionary with 3 members:
+'member1', 'member2', and 'member3', or type 'str', 'int', and 'str',
+respectively.
 
 The use of '*' as a prefix to the name means the member is optional.  Optional
 members should always be added to the end of the dictionary to preserve
 backwards compatibility.
 
-An enumeration type is a dictionary containing a single key who's value is a
-list of strings.  An example enumeration is:
+In cases where a type will only be used once, you also have the option of
+declaring the type "anonymously" by embedding it into a type or command
+definition rather than naming the type and defining it seperately.  For
+example, the following definition:
+
+ { 'type': 'MyOuterType',
+   'data': { 'member1': { 'inner_member1': 'str', 'inner_member2': 'int' } } }
+
+will, functionally at least, result in the same internal/external
+representation as:
+
+ { 'type': 'MyInnerType',
+   'data': { 'inner_member1': 'str', 'inner_member2': 'int' } }
+
+ { 'type': 'MyOuterType',
+   'data': { 'member1': 'MyInnerType' } }
+
+=== Union types ===
+
+Union types are also supported:
+
+ { 'union': 'MyUnion',
+   'data': {
+        'member-for-this': 'MyType1',
+        'member-for-that': 'MyType2',
+    } }
+
+This roughly corresponds to a complex type of the following form:
+
+ { 'enum': 'MyUnionKind',
+   'data': [ 'member-for-this', 'member-for-that' ] }
+
+ { 'type': 'MyUnion',
+   'data': { 'type': 'MyUnionKind', 'data': 'MyType1' } }
+
+or
+
+ { 'type': 'MyUnion',
+   'data': { 'type': 'MyUnionKind', 'data': 'MyType2' } }
+
+Whether the (nested) 'data' field is of type 'MyType1' or 'MyType2' is
+dependent on the (nested) 'type' field's value.
+
+=== Enum types ===
+
+An enumeration type is essentially a 'str' type, but restricted to an allowed
+range that is specified by the list of strings in the enum definition. An
+example enumeration is:
 
  { 'enum': 'MyEnum', 'data': [ 'value1', 'value2', 'value3' ] }
 
-Generally speaking, complex types and enums should always use CamelCase for
-the type names.
+In terms of external/wire users, this is basically a way to specify that a
+field has a 'str' type, but that the value must be one of 'value1', 'value2',
+or 'value3'.
+
+Generally speaking, complex types, unions, and enums should always use
+CamelCase for the type names.  Lower-case types are reserved for the
+internally-defined types described below.
+
+=== List types ===
+
+List types can be defined by enclosing a named type (Complex/Union/Enum
+types as described above) in brackets.  For example:
+
+ { 'type': 'MyInnerType',
+   'data': { 'inner_member1': 'str', 'inner_member2': 'int' } }
+
+ { 'type': 'MyOuterType',
+   'data': { 'member1': ['MyInnerType'] } }
+
+defines MyOuterType as being a complex type whose 'member1' field is a list
+of 0 or more instances of 'MyInnerType'
+
+Lists of internally-defined types (described below) are not currently supported.
+You can, however, encapsulate internally-defined type with a simple named type
+so that you can create a list.  For instance:
+
+ { 'type': 'String',
+   'data': { 'str': 'str' } }
+
+would allow for ['String'] list types in commands or named type definitions.
+
+=== Internally-defined types ===
+
+In addition to the types specified above, member fields can also be of the
+following internally-defined/'native' types:
+
+ 'int': a signed 64-bit integer
+ 'int8': a signed 8-bit integer
+ 'int16': a signed 16-bit integer
+ 'int32': a signed 32-bit integer
+ 'int64': a signed 64-bit integer
+ 'uint8': an unsigned 8-bit integer
+ 'uint16': an unsigned 16-bit integer
+ 'uint32': an unsigned 32-bit integer
+ 'uint64': an unsigned 64-bit integer
+ 'double': a double-precision floating point value
+ 'str': a pointer to a null-terminated char*
+ 'bool': a bool
+
+=== Commands ===
 
 Commands are defined by using a list containing three members.  The first
 member is the command name, the second member is a dictionary containing
@@ -66,6 +188,120 @@ An example command is:
    'returns': 'str' }
 
 Command names should be all lower case with words separated by a hyphen.
+
+See the output of the code generators (usage information below)
+given a schema declaration of this sort for the specifics regarding the
+internal/native C representations.
+
+
+== Internally-used schema extensions ==
+
+The following describes some extensions that have been added to the QAPI
+schema format to handle additional use cases such as QIDL-based device
+serialization.  These extensions should be considered
+"unstable"/"unsupported" for external users, and should not be used
+in externally-advertised QAPI schemas, or to define externally-accessible
+interfaces, until they've been deemed stable.  These are also currently
+non-applicable for QAPI type-generators, and are meant to better describe
+an existing C type for QAPI visitor-generators.
+
+We document these extensions here now as a reference for developers.
+
+Currently these extensions are done on a per-field basis by using a more
+verbose syntax and designating that field as being "annotated". For instance,
+starting with a "complex" type such as:
+
+ { 'type': 'MyType',
+   'data': { 'member1': 'str', 'member2': 'int', 'member3': ['SomeType']
+    } }
+
+we can add type-specific annotations for a particular field, say,
+'member3', by using the following form:
+
+ { 'type': 'MyType',
+   'data': { 'member1': 'str', 'member2': 'int',
+             'member3': {
+              '<annotated>': 'true',
+              'type': ['SomeType'],
+              'annotation1': ...,
+              ...
+              'annotationN': ...,
+ } } }
+
+As noted, the annotations you can use depend on the type of the field.
+Currently, the types that support annotations are:
+
+ <ComplexType>
+   The following annotations are available for a named/user-defined
+   complex type (as described previously in this document):
+
+     'embedded':
+       This annotation field can be used to provide a hint to the QAPI code
+       generator that the type is represented natively as an embedded struct,
+       as opposed to a struct ptr, as is normally the case. The allowed
+       values for the field are strings: either 'true' or 'false'.
+
+ ['<ComplexType>']
+ ['str' | 'int' | 'uint64' | 'str' | <etc>]
+   An annotated list type has an implied effect of hinting to the QAPI code
+   generator that the list is represented internally an array rather than
+   a linked list structure, as is normally the case. This implied behavior
+   is due to that fact that this is currently the common case for annotated
+   lists. Support for annotated lists that should still be handled internally
+   has linked list can be accomplished in the future by adding an addtional
+   annotation.
+
+   This syntax also allows you to specify a list of
+   internally-defined/'native' types, as described above, which is not
+   supported when using the non-annotated syntax.
+
+   The following annotations are available:
+
+     'array_capacity':
+       Specifies the number of elements in the array. This accepts
+       a numerical value of 0 or more, or a C expression
+       (see: 'array_size'). If this annotation is absent,
+       the 'array_size' annotation must be provided, and will be
+       treated both as the capacity of the array and the number of
+       initialized/relevant elements therein.
+
+       If there are multiple dimensions to the array, a list of values
+       following the above rules, one for each dimension, can be
+       used.
+
+     'array_size':
+       For cases where the number of elements that should be sent/read
+       differs from the capacity of the array field where those elements
+       are/will be stored, you can use this annotation to hint the QAPI
+       code generator accordingly. Possible values are either a numerical
+       value of 0 or more (but <= array_capacity), a string value that
+       specifies an integer field within the same instance of the parent
+       type that stores the array size, or a C expression.
+
+       To specify a C expression, use a string of the form:
+       '(<expression>)', such as '(sizeof_some_array() + 4)', for example.
+       The expression will be evaluated in the context of the generated
+       visitor code. In the case of QIDL, this will be equivalent to
+       having an expression within a function at the end of the
+       compilation unit for which the code was generated. This may not
+       hold for non-QIDL users, however, in which case the expression
+       must only rely on constants or global-accessible variables/functions.
+
+       In either case, however, you can reference the field 'obj', which
+       will be a pointer to the instance of the parent class being
+       processed by the generated code. See the generated visitor code for
+       specifics, and use this sparingly (read: only if you absolutely
+       have to), as support for referencing the parent obj in this fashion
+       is likely to be dropped unless a pressing use-case arises.
+
+       If there are multiple dimensions to the array, a list of values
+       following the above rules, one for each dimension, can be
+       used.
+
+    'is_string':
+      In cases where we have a C array of type char[], but which for the
+      contents to be processed as a null-terminated string, the 'is_string'
+      annotation can be used to remove any ambiguity.
 
 
 == Code generation ==
