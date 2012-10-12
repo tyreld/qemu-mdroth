@@ -23,6 +23,21 @@
 from UserDict import DictMixin
 
 class OrderedDict(dict, DictMixin):
+    class Indent(object):
+        def __init__(self, enable=True, initial_spacing=4, initial_level=0):
+            self.enable = enable
+            self.level = initial_level
+            self.spacing = initial_spacing
+        def inc(self, n=1):
+            self.level += n
+            return self.level
+        def dec(self, n=1):
+            self.level -= n
+            return self.level
+        def prefix(self):
+            if self.enable:
+                return " " * (self.spacing * self.level)
+            return ""
 
     def __init__(self, *args, **kwds):
         if len(args) > 1:
@@ -125,3 +140,39 @@ class OrderedDict(dict, DictMixin):
 
     def __ne__(self, other):
         return not self == other
+
+    def __obj_to_json(self, node, pretty=True, indent_spacing=4, indent_level=0):
+        i = self.Indent(pretty, indent_spacing, indent_level)
+        text = ""
+
+        if isinstance(node, OrderedDict):
+            if indent_level == 0:
+                text += "%s{\n" % i.prefix()
+            else:
+                text += "{\n"
+            i.inc()
+            for (k, v) in node.items():
+                text += "%s'%s': %s" % (i.prefix(), k,
+                    self.__obj_to_json(v, pretty, i.spacing, i.level))
+            i.dec()
+            text += "%s}" % i.prefix()
+        elif isinstance(node, list):
+            text += "[\n"
+            i.inc()
+            for e in node:
+                text += "%s%s" % (i.prefix(),
+                    self.__obj_to_json(e, pretty, i.spacing, i.level))
+            i.dec()
+            text += "%s]" % i.prefix()
+        else:
+            text += repr(node)
+
+        if indent_level > 0:
+            text += ",\n"
+
+        if not pretty:
+            return text.replace("\n", " ")
+        return text
+
+    def to_json(self, pretty=True, indent_spacing=4, indent_level=0):
+        return self.__obj_to_json(self)
