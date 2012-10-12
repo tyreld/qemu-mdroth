@@ -247,7 +247,7 @@ static void test_visitor_in_union(TestInputVisitorData *data,
 {
     Visitor *v;
     Error *err = NULL;
-    UserDefUnion *tmp;
+    UserDefUnion *tmp = NULL;
 
     v = visitor_input_test_init(data, "{ 'type': 'b', 'data' : { 'integer': 42 } }");
 

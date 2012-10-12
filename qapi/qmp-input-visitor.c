@@ -132,7 +132,7 @@ static void qmp_input_start_struct(Visitor *v, void **obj, const char *kind,
         return;
     }
 
-    if (obj) {
+    if (obj && *obj == NULL) {
         *obj = g_malloc0(size);
     }
 }
