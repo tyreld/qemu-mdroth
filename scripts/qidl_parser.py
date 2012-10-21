@@ -17,6 +17,9 @@ def process_annotation(node, params):
     annotation_group = params[0]
     if annotation_group == 'serialize':
         annotation_type = params[1]
+        if annotation_type != 'size_is':
+            node['use_default_tag'] = False
+
         if annotation_type == 'derived':
             node['is_derived'] = True
         elif annotation_type == 'immutable':
@@ -76,6 +79,7 @@ def parse_annotations(l, node):
 
 def parse_type(l):
     node = {}
+    node['use_default_tag'] = True
 
     typename = ''
     if l.check_token('const', 'const'):
@@ -127,6 +131,7 @@ def parse_var_decl(l, repeating_type=None):
         node = parse_type(l)
     else:
         node = { 'type': repeating_type }
+        node['use_default_tag'] = True
 
     if l.check_token('operator', '('):
         node['is_function'] = True
@@ -202,6 +207,16 @@ def parse_typedef(l):
 
     return { 'typedef': typename, 'type': node }
 
+def get_default_tag(params):
+    default_tag = "standard"
+    try:
+        index = params.index('serialize')
+        default_tag = params[index + 1]
+    except Exception:
+        pass
+    finally:
+        return default_tag
+
 def parse_declaration_params(l):
     declaration_info = {}
     params = []
@@ -241,8 +256,18 @@ def parse_declaration_params(l):
         declaration_info['do_state'] = False
     if "skip_properties" in params:
         declaration_info['do_properties'] = False
+    declaration_info['default_tag'] = get_default_tag(params)
 
     return declaration_info
+
+def immutable_by_default(field):
+    immutable = False
+    if field['type'] == 'void' and field.has_key('is_pointer') \
+            and field['is_pointer']:
+        immutable = True
+    elif field.has_key('is_const') and field['is_const']:
+        immutable = True
+    return immutable
 
 def parse_declaration(l):
     declaration_info = parse_declaration_params(l)
@@ -253,6 +278,14 @@ def parse_declaration(l):
         node = parse_struct(l)
     else:
         raise Exception("%s: unsupported QIDL declaration", l)
+
+    default_tag = declaration_info['default_tag']
+    for field in node['fields']:
+        if field['use_default_tag'] == True:
+            if immutable_by_default(field):
+                process_annotation(field, ['serialize', 'immutable'])
+            else:
+                process_annotation(field, ['serialize', default_tag])
 
     l.pop_expected('operator', ';')
     node['id'] = declaration_info['id']
