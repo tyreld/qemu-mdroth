@@ -80,6 +80,8 @@ def parse_annotations(l, node):
 def parse_type(l):
     node = {}
     node['use_default_tag'] = True
+    unsigned_types = ['char', 'short', 'int', 'long']
+    type_complete = False
 
     typename = ''
     if l.check_token('const', 'const'):
@@ -89,7 +91,12 @@ def parse_type(l):
         typename += l.pop() + ' '
 
     if l.check_token('unsigned', 'unsigned'):
-        typename += l.pop() + ' '
+        typename += l.pop()
+        if filter(lambda t: l.check_token('symbol', t), unsigned_types):
+            typename += ' '
+        else:
+            typename += ' int'
+            type_complete = True
 
     if l.check_token('union', 'union'):
         typename += l.pop() + ' '
@@ -113,7 +120,7 @@ def parse_type(l):
         if l.check_token('operator', '*'):
             l.pop()
             node['is_pointer'] = True
-        else:
+        elif type_complete == False:
             typename += l.pop_expected('symbol')
 
     node['type'] = typename
