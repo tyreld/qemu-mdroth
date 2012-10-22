@@ -278,6 +278,8 @@ def immutable_by_default(field):
         immutable = True
     elif field.has_key('is_const') and field['is_const']:
         immutable = True
+    elif field.has_key('is_function') and field['is_function']:
+        immutable = True
     return immutable
 
 def parse_declaration(l):
