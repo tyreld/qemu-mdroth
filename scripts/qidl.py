@@ -19,7 +19,16 @@ import getopt
 import os
 import errno
 
-def qapi_schema(node):
+def ignored_field(field):
+    ignore_flags = ['is_derived', 'is_immutable', 'is_broken', 'is_function', \
+                    'is_nested_decl', 'is_elsewhere']
+    for flag in ignore_flags:
+        if field.has_key(flag) and field[flag]:
+            return True
+
+    return False
+
+def qapi_schema(node, ignored_types=[]):
     schema = OrderedDict()
     data = OrderedDict()
     fields = None
@@ -33,9 +42,10 @@ def qapi_schema(node):
         raise Exception("top-level neither typedef nor struct")
 
     for field in fields:
-        if filter(lambda x: field.has_key(x), \
-                ['is_derived', 'is_immutable', 'is_broken', 'is_function', \
-                 'is_nested_decl', 'is_elsewhere']):
+        if ignored_field(field):
+            continue
+
+        if field['type'] in ignored_types:
             continue
 
         description = OrderedDict()
@@ -249,7 +259,28 @@ def main(argv=[]):
         elif o in ("-I", "--include"):
             includes.append(a)
 
-    nodes = filter(lambda n: n.has_key('implement') and n['implement'], parse_file(sys.stdin))
+    nodes = parse_file(sys.stdin)
+
+    # avoid adding QAPI fields for complex types that have no serializeable fields
+    ignored_types = []
+    for node in nodes:
+        fields = []
+        serialized_fields = []
+        typename = None
+        if node.has_key('typedef'):
+            typename = node['typedef']
+            fields = node['type']['fields']
+        elif node.has_key('struct'):
+            typename = node['struct']
+            fields = node['fields']
+        else:
+            continue
+        serialized_fields = filter(lambda f: ignored_field(f) == False, fields)
+        if serialized_fields == []:
+            ignored_types.append(typename)
+
+    # remove nodes for which generated code is implemented elsewhere
+    nodes = filter(lambda n: n.has_key('implement') and n['implement'], nodes)
     if not nodes:
         return 2
 
@@ -265,7 +296,7 @@ def main(argv=[]):
         output += generate_include(include)
     for node in nodes:
         do_state = False
-        schema = qapi_schema(node)
+        schema = qapi_schema(node, ignored_types)
         prop_list = []
         # qapi parser expects iteration to be line-by-line
         schema_text = schema.to_json()
