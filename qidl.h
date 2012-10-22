@@ -18,6 +18,7 @@
 
 #include <glib.h>
 #include "qapi/qapi-visit-core.h"
+#include "qapi/misc-qapi-visit.h"
 #include "qemu/object.h"
 #include "hw/qdev-properties.h"
 
