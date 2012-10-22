@@ -85,7 +85,8 @@ def parse_type(l):
 
     typename = ''
     if l.check_token('const', 'const'):
-        typename += l.pop() + ' '
+        node['is_const'] = True
+        l.pop()
 
     if l.check_token('struct', 'struct'):
         typename += l.pop() + ' '
