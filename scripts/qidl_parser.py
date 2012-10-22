@@ -89,6 +89,9 @@ def parse_type(l):
 
     if l.check_token('struct', 'struct'):
         typename += l.pop() + ' '
+        if not l.check_token('operator', '{'):
+            typename += l.pop_expected('symbol')
+            type_complete = True
 
     if l.check_token('unsigned', 'unsigned'):
         typename += l.pop()
