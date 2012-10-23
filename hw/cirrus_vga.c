@@ -258,10 +258,12 @@ QIDL_DECLARE(PCICirrusVGAState) {
     CirrusVGAState cirrus_vga;
 };
 
-typedef struct ISACirrusVGAState {
-    ISADevice dev;
+typedef struct ISACirrusVGAState ISACirrusVGAState;
+
+QIDL_DECLARE(ISACirrusVGAState) {
+    ISADevice dev q_immutable;
     CirrusVGAState cirrus_vga;
-} ISACirrusVGAState;
+};
 
 static uint8_t rop_to_index[256];
 
