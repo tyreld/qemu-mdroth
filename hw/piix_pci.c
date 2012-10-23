@@ -543,12 +543,33 @@ static const VMStateDescription vmstate_piix3 = {
     }
 };
 
+static void piix3_get_state(Object *obj, Visitor *v, void *opaque,
+                            const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PIIX3State *s = DO_UPCAST(PIIX3State, dev, pci);
+    QIDL_VISIT_TYPE(PIIX3State, v, &s, name, errp);
+}
+
+static void piix3_set_state(Object *obj, Visitor *v, void *opaque,
+                            const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PIIX3State *s = DO_UPCAST(PIIX3State, dev, pci);
+    QIDL_VISIT_TYPE(PIIX3State, v, &s, name, errp);
+}
+
 static int piix3_initfn(PCIDevice *dev)
 {
     PIIX3State *d = DO_UPCAST(PIIX3State, dev, dev);
 
     isa_bus_new(&d->dev.qdev, pci_address_space_io(dev));
     qemu_register_reset(piix3_reset, d);
+
+    object_property_add(OBJECT(d), "state", "PIIX3State",
+                        piix3_get_state, piix3_set_state, NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PIIX3State, OBJECT(d), "state_schema", NULL);
+
     return 0;
 }
 
