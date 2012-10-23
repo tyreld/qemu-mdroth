@@ -25,6 +25,7 @@
 #include <hw/hw.h>
 #include "error.h"
 #include "memory.h"
+#include "qidl.h"
 
 #define ST01_V_RETRACE      0x08
 #define ST01_DISP_ENABLE    0x01
@@ -84,9 +85,11 @@ struct VGACommonState;
 typedef uint8_t (* vga_retrace_fn)(struct VGACommonState *s);
 typedef void (* vga_update_retrace_info_fn)(struct VGACommonState *s);
 
-typedef struct VGACommonState {
+typedef struct VGACommonState VGACommonState;
+
+QIDL_DECLARE(VGACommonState) {
     MemoryRegion *legacy_address_space;
-    uint8_t *vram_ptr;
+    uint8_t q_immutable *vram_ptr;
     MemoryRegion vram;
     MemoryRegion vram_vbe;
     uint32_t vram_size;
@@ -130,7 +133,7 @@ typedef struct VGACommonState {
     uint32_t vbe_bank_mask;
     int vbe_mapped;
     /* display refresh support */
-    DisplayState *ds;
+    DisplayState q_immutable *ds;
     uint32_t font_offsets[2];
     int graphic_mode;
     uint8_t shift_control;
@@ -150,10 +153,10 @@ typedef struct VGACommonState {
     uint32_t cursor_offset;
     unsigned int (*rgb_to_pixel)(unsigned int r,
                                  unsigned int g, unsigned b);
-    vga_hw_update_ptr update;
-    vga_hw_invalidate_ptr invalidate;
-    vga_hw_screen_dump_ptr screen_dump;
-    vga_hw_text_update_ptr text_update;
+    vga_hw_update_ptr q_immutable update;
+    vga_hw_invalidate_ptr q_immutable invalidate;
+    vga_hw_screen_dump_ptr q_immutable screen_dump;
+    vga_hw_text_update_ptr q_immutable text_update;
     /* hardware mouse cursor support */
     uint32_t invalidated_y_table[VGA_MAX_HEIGHT / 32];
     void (*cursor_invalidate)(struct VGACommonState *s);
@@ -162,11 +165,11 @@ typedef struct VGACommonState {
     uint32_t last_palette[256];
     uint32_t last_ch_attr[CH_ATTR_SIZE]; /* XXX: make it dynamic */
     /* retrace */
-    vga_retrace_fn retrace;
-    vga_update_retrace_info_fn update_retrace_info;
-    union vga_retrace retrace_info;
+    vga_retrace_fn q_immutable retrace;
+    vga_update_retrace_info_fn q_immutable update_retrace_info;
+    union vga_retrace q_immutable retrace_info;
     uint8_t is_vbe_vmstate;
-} VGACommonState;
+};
 
 static inline int c6_to_8(int v)
 {
