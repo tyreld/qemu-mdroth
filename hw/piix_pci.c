@@ -33,6 +33,8 @@
 #include "pam.h"
 #include "qidl.h"
 
+QIDL_ENABLE()
+
 /*
  * I440FX chipset data sheet.
  * http://download.intel.com/design/chipsets/datashts/29054901.pdf
@@ -198,6 +200,23 @@ static int i440fx_pcihost_initfn(SysBusDevice *dev)
     return 0;
 }
 
+static void i440fx_get_state(Object *obj, Visitor *v, void *opaque,
+                             const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCII440FXState *s = DO_UPCAST(PCII440FXState, dev, pci);
+    QIDL_VISIT_TYPE(PCII440FXState, v, &s, name, errp);
+}
+
+static void i440fx_set_state(Object *obj, Visitor *v, void *opaque,
+                             const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCII440FXState *s = DO_UPCAST(PCII440FXState, dev, pci);
+    QIDL_VISIT_TYPE(PCII440FXState, v, &s, name, errp);
+    i440fx_post_load(s, -1);
+}
+
 static int i440fx_initfn(PCIDevice *dev)
 {
     PCII440FXState *d = DO_UPCAST(PCII440FXState, dev, dev);
@@ -205,6 +224,11 @@ static int i440fx_initfn(PCIDevice *dev)
     d->dev.config[I440FX_SMRAM] = 0x02;
 
     cpu_smm_register(&i440fx_set_smm, d);
+
+    object_property_add(OBJECT(d), "state", "PCII440FXState",
+                        i440fx_get_state, i440fx_set_state, NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PCII440FXState, OBJECT(d), "state_schema", NULL);
+
     return 0;
 }
 
