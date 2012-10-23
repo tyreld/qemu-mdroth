@@ -33,6 +33,8 @@
 #include "loader.h"
 #include "qidl.h"
 
+QIDL_ENABLE()
+
 /*
  * TODO:
  *    - destination write mask support not complete (bits 5..7)
@@ -2939,6 +2941,23 @@ static TypeInfo isa_cirrus_vga_info = {
  *
  ***************************************/
 
+static void pci_cirrus_vga_get_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCICirrusVGAState *s = DO_UPCAST(PCICirrusVGAState, dev, pci);
+    QIDL_VISIT_TYPE(PCICirrusVGAState, v, &s, name, errp);
+}
+
+static void pci_cirrus_vga_set_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCICirrusVGAState *s = DO_UPCAST(PCICirrusVGAState, dev, pci);
+    QIDL_VISIT_TYPE(PCICirrusVGAState, v, &s, name, errp);
+    cirrus_post_load(&s->cirrus_vga, -1);
+}
+
 static int pci_cirrus_vga_initfn(PCIDevice *dev)
 {
      PCICirrusVGAState *d = DO_UPCAST(PCICirrusVGAState, dev, dev);
@@ -2971,6 +2990,11 @@ static int pci_cirrus_vga_initfn(PCIDevice *dev)
      if (device_id == CIRRUS_ID_CLGD5446) {
          pci_register_bar(&d->dev, 1, 0, &s->cirrus_mmio_io);
      }
+
+    object_property_add(OBJECT(d), "state", "PCICirrusVGAState",
+                        pci_cirrus_vga_get_state, pci_cirrus_vga_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PCICirrusVGAState, OBJECT(d), "state_schema", NULL);
      return 0;
 }
 
