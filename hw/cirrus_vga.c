@@ -2903,6 +2903,23 @@ static void cirrus_init_common(CirrusVGAState * s, int device_id, int is_pci,
  *
  ***************************************/
 
+static void isa_cirrus_vga_get_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    ISACirrusVGAState *s = DO_UPCAST(ISACirrusVGAState, dev, isa);
+    QIDL_VISIT_TYPE(ISACirrusVGAState, v, &s, name, errp);
+}
+
+static void isa_cirrus_vga_set_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    ISACirrusVGAState *s = DO_UPCAST(ISACirrusVGAState, dev, isa);
+    QIDL_VISIT_TYPE(ISACirrusVGAState, v, &s, name, errp);
+    cirrus_post_load(&s->cirrus_vga, -1);
+}
+
 static int vga_initfn(ISADevice *dev)
 {
     ISACirrusVGAState *d = DO_UPCAST(ISACirrusVGAState, dev, dev);
@@ -2918,6 +2935,10 @@ static int vga_initfn(ISADevice *dev)
     rom_add_vga(VGABIOS_CIRRUS_FILENAME);
     /* XXX ISA-LFB support */
     /* FIXME not qdev yet */
+    object_property_add(OBJECT(d), "state", "ISACirrusVGAState",
+                        isa_cirrus_vga_get_state, isa_cirrus_vga_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(ISACirrusVGAState, OBJECT(d), "state_schema", NULL);
     return 0;
 }
 
