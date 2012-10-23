@@ -30,6 +30,7 @@
 #include "sysbus.h"
 #include "range.h"
 #include "xen.h"
+#include "qidl.h"
 
 /*
  * I440FX chipset data sheet.
@@ -68,12 +69,14 @@ typedef struct PIIX3State {
     int32_t pci_irq_levels_vmstate[PIIX_NUM_PIRQS];
 } PIIX3State;
 
-typedef struct PAMMemoryRegion {
+typedef struct PAMMemoryRegion PAMMemoryRegion;
+
+QIDL_DECLARE(PAMMemoryRegion) {
     MemoryRegion alias[4];  /* index = PAM value */
     unsigned current;
-} PAMMemoryRegion;
+};
 
-struct PCII440FXState {
+QIDL_DECLARE(PCII440FXState) {
     PCIDevice dev;
     MemoryRegion *system_memory;
     MemoryRegion *pci_address_space;
