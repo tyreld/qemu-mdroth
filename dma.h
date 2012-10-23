@@ -15,6 +15,7 @@
 #include "hw/hw.h"
 #include "block.h"
 #include "kvm.h"
+#include "qidl.h"
 
 typedef struct DMAContext DMAContext;
 typedef struct ScatterGatherEntry ScatterGatherEntry;
@@ -61,7 +62,7 @@ typedef void DMAUnmapFunc(DMAContext *dma,
                           DMADirection dir,
                           dma_addr_t access_len);
 
-struct DMAContext {
+QIDL_DECLARE_PUBLIC(DMAContext, q_immutable) {
     AddressSpace *as;
     DMATranslateFunc *translate;
     DMAMapFunc *map;

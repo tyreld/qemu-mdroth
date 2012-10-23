@@ -11,6 +11,10 @@
 #include "trace.h"
 #include "range.h"
 #include "qemu-thread.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(DMAContext)
 
 /* #define DEBUG_IOMMU */
 
