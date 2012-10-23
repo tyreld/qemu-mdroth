@@ -187,37 +187,39 @@ typedef int (*MSIVectorUseNotifier)(PCIDevice *dev, unsigned int vector,
                                       MSIMessage msg);
 typedef void (*MSIVectorReleaseNotifier)(PCIDevice *dev, unsigned int vector);
 
-struct PCIDevice {
+QIDL_DECLARE_PUBLIC(PCIDevice) {
     DeviceState qdev;
 
     /* PCI config space */
-    uint8_t *config;
+    uint8_t *config \
+        q_size((pci_is_express(*obj) ? \
+                       PCIE_CONFIG_SPACE_SIZE : PCI_CONFIG_SPACE_SIZE));
 
     /* Used to enable config checks on load. Note that writable bits are
      * never checked even if set in cmask. */
-    uint8_t *cmask;
+    uint8_t q_immutable *cmask;
 
     /* Used to implement R/W bytes */
-    uint8_t *wmask;
+    uint8_t q_immutable *wmask;
 
     /* Used to implement RW1C(Write 1 to Clear) bytes */
-    uint8_t *w1cmask;
+    uint8_t q_immutable *w1cmask;
 
     /* Used to allocate config space for capabilities. */
-    uint8_t *used;
+    uint8_t q_immutable *used;
 
     /* the following fields are read only */
     PCIBus *bus;
-    int32_t devfn;
-    char name[64];
-    PCIIORegion io_regions[PCI_NUM_REGIONS];
-    AddressSpace bus_master_as;
+    int32_t q_property("addr", -1) devfn;
+    char q_string name[64];
+    PCIIORegion q_immutable io_regions[PCI_NUM_REGIONS];
+    AddressSpace q_immutable bus_master_as;
     MemoryRegion bus_master_enable_region;
     DMAContext *dma;
 
     /* do not access the following fields */
-    PCIConfigReadFunc *config_read;
-    PCIConfigWriteFunc *config_write;
+    PCIConfigReadFunc q_immutable *config_read;
+    PCIConfigWriteFunc q_immutable *config_write;
 
     /* IRQ objects for the INTA-INTD pins.  */
     qemu_irq *irq;
@@ -226,7 +228,10 @@ struct PCIDevice {
     uint8_t irq_state;
 
     /* Capability bits */
-    uint32_t cap_present;
+    uint32_t \
+        q_property("multifunction", QEMU_PCI_CAP_MULTIFUNCTION_BITNR, false) \
+        q_property("command_serr_enable", QEMU_PCI_CAP_SERR_BITNR, true) \
+        cap_present;
 
     /* Offset of MSI-X capability in config space */
     uint8_t msix_cap;
@@ -235,15 +240,17 @@ struct PCIDevice {
     int msix_entries_nr;
 
     /* Space to store MSIX table & pending bit array */
-    uint8_t *msix_table;
-    uint8_t *msix_pba;
+    int32_t msix_table_size;
+    uint8_t *msix_table q_size(msix_table_size);
+    int32_t msix_pba_size;
+    uint8_t *msix_pba q_size(msix_pba_size);
     /* MemoryRegion container for msix exclusive BAR setup */
     MemoryRegion msix_exclusive_bar;
     /* Memory Regions for MSIX table and pending bit entries. */
     MemoryRegion msix_table_mmio;
     MemoryRegion msix_pba_mmio;
     /* Reference-count for entries actually in use by driver. */
-    unsigned *msix_entry_used;
+    unsigned q_immutable *msix_entry_used;
     /* MSIX function mask set or MSIX disabled */
     bool msix_function_masked;
     /* Version id needed for VMState */
@@ -253,23 +260,23 @@ struct PCIDevice {
     uint8_t msi_cap;
 
     /* PCI Express */
-    PCIExpressDevice exp;
+    PCIExpressDevice q_broken exp; /* TODO: qidl, is PCIEAERLog guest-visible? */
 
     /* SHPC */
-    SHPCDevice *shpc;
+    SHPCDevice q_broken *shpc; /* TODO: qidl, needed for pci-bridge support */
 
     /* Location of option rom */
-    char *romfile;
+    char q_property("romfile") *romfile;
     bool has_rom;
     MemoryRegion rom;
-    uint32_t rom_bar;
+    uint32_t q_property("rombar", 1) rom_bar;
 
     /* INTx routing notifier */
-    PCIINTxRoutingNotifier intx_routing_notifier;
+    PCIINTxRoutingNotifier q_immutable intx_routing_notifier;
 
     /* MSI-X notifiers */
-    MSIVectorUseNotifier msix_vector_use_notifier;
-    MSIVectorReleaseNotifier msix_vector_release_notifier;
+    MSIVectorUseNotifier q_immutable msix_vector_use_notifier;
+    MSIVectorReleaseNotifier q_immutable msix_vector_release_notifier;
 };
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,

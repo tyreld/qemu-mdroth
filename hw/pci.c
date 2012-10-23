@@ -35,6 +35,11 @@
 #include "msix.h"
 #include "exec-memory.h"
 
+QIDL_ENABLE()
+
+QIDL_IMPLEMENT_PUBLIC(PCIDevice)
+QIDL_IMPLEMENT_PUBLIC(PCIBus)
+
 //#define DEBUG_PCI
 #ifdef DEBUG_PCI
 # define PCI_DPRINTF(format, ...)       printf(format, ## __VA_ARGS__)
