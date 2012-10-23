@@ -48,7 +48,9 @@ typedef struct I440FXState {
 #define XEN_PIIX_NUM_PIRQS      128ULL
 #define PIIX_PIRQC              0x60
 
-typedef struct PIIX3State {
+typedef struct PIIX3State PIIX3State;
+
+QIDL_DECLARE(PIIX3State) {
     PCIDevice dev;
 
     /*
@@ -65,11 +67,11 @@ typedef struct PIIX3State {
 #endif
     uint64_t pic_levels;
 
-    qemu_irq *pic;
+    qemu_irq q_immutable *pic;
 
     /* This member isn't used. Just for save/load compatibility */
     int32_t pci_irq_levels_vmstate[PIIX_NUM_PIRQS];
-} PIIX3State;
+};
 
 typedef struct PAMMemoryRegion PAMMemoryRegion;
 
