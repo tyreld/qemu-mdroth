@@ -9,6 +9,8 @@
 #include "qemu/object.h"
 #include "error.h"
 #include "qdev-properties.h"
+#include "qdev.h"
+#include "qidl.h"
 
 typedef struct CompatProperty CompatProperty;
 
@@ -57,7 +59,7 @@ typedef struct DeviceClass {
 
 /* This structure should not be accessed directly.  We declare it here
    so that it can be embedded in individual device state structures.  */
-struct DeviceState {
+QIDL_DECLARE_PUBLIC(DeviceState, q_immutable) {
     Object parent_obj;
 
     const char *id;
@@ -107,7 +109,7 @@ typedef struct BusChild {
  * @glib_allocated: Indicates whether the object was initialized in-place
  * yet is expected to be freed with g_free().
  */
-struct BusState {
+QIDL_DECLARE_PUBLIC(BusState, q_immutable) {
     Object obj;
     DeviceState *parent;
     const char *name;

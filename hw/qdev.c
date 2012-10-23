@@ -29,6 +29,11 @@
 #include "qdev.h"
 #include "sysemu.h"
 #include "error.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(DeviceState)
+QIDL_IMPLEMENT_PUBLIC(BusState)
 
 int qdev_hotplug = 0;
 static bool qdev_hot_added = false;
