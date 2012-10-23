@@ -109,9 +109,9 @@
  *
  * q_property(<property name> [, <default value>]): specifies that field is a
  *   qdev-style property. all properties of the struct are then accessible via
- *   QIDL_PROPERTIES(<device name>) macro.
+ *   QIDL_PROPERTIES(<device name>) macro. this also implies q_immutable.
  */
-#define q_property(name, ...) QIDL(property, name, ##__VA_ARGS__)
+#define q_property(name, ...) q_immutable QIDL(property, name, ##__VA_ARGS__)
 
 /* declare a QIDL-annotated structure, private to source file.
  * generated code will be injected into the source file's compiled
