@@ -31,6 +31,7 @@
 #include "console.h"
 #include "vga_int.h"
 #include "loader.h"
+#include "qidl.h"
 
 /*
  * TODO:
@@ -196,7 +197,9 @@ typedef void (*cirrus_bitblt_rop_t) (struct CirrusVGAState *s,
 typedef void (*cirrus_fill_t)(struct CirrusVGAState *s,
                               uint8_t *dst, int dst_pitch, int width, int height);
 
-typedef struct CirrusVGAState {
+typedef struct CirrusVGAState CirrusVGAState;
+
+QIDL_DECLARE(CirrusVGAState) {
     VGACommonState vga;
 
     MemoryRegion cirrus_linear_io;
@@ -229,11 +232,11 @@ typedef struct CirrusVGAState {
     uint32_t cirrus_blt_srcaddr;
     uint8_t cirrus_blt_mode;
     uint8_t cirrus_blt_modeext;
-    cirrus_bitblt_rop_t cirrus_rop;
+    cirrus_bitblt_rop_t q_immutable cirrus_rop;
 #define CIRRUS_BLTBUFSIZE (2048 * 4) /* one line width */
     uint8_t cirrus_bltbuf[CIRRUS_BLTBUFSIZE];
-    uint8_t *cirrus_srcptr;
-    uint8_t *cirrus_srcptr_end;
+    uint8_t q_derived *cirrus_srcptr;
+    uint8_t q_derived *cirrus_srcptr_end;
     uint32_t cirrus_srccounter;
     /* hwcursor display state */
     int last_hw_cursor_size;
@@ -244,12 +247,14 @@ typedef struct CirrusVGAState {
     int real_vram_size; /* XXX: suppress that */
     int device_id;
     int bustype;
-} CirrusVGAState;
+};
 
-typedef struct PCICirrusVGAState {
+typedef struct PCICirrusVGAState PCICirrusVGAState;
+
+QIDL_DECLARE(PCICirrusVGAState) {
     PCIDevice dev;
     CirrusVGAState cirrus_vga;
-} PCICirrusVGAState;
+};
 
 typedef struct ISACirrusVGAState {
     ISADevice dev;
