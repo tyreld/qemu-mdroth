@@ -22,6 +22,10 @@
 #include "sysemu.h"
 #include "isa.h"
 #include "exec-memory.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(ISADevice)
 
 static ISABus *isabus;
 hwaddr isa_mem_base = 0;
