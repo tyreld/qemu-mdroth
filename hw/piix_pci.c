@@ -31,6 +31,7 @@
 #include "range.h"
 #include "xen.h"
 #include "pam.h"
+#include "qidl.h"
 
 /*
  * I440FX chipset data sheet.
@@ -69,7 +70,7 @@ typedef struct PIIX3State {
     int32_t pci_irq_levels_vmstate[PIIX_NUM_PIRQS];
 } PIIX3State;
 
-struct PCII440FXState {
+QIDL_DECLARE(PCII440FXState) {
     PCIDevice dev;
     MemoryRegion *system_memory;
     MemoryRegion *pci_address_space;
