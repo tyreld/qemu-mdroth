@@ -25,6 +25,7 @@
 #include "iorange.h"
 #include "ioport.h"
 #include "int128.h"
+#include "qidl.h"
 
 typedef struct MemoryRegionOps MemoryRegionOps;
 typedef struct MemoryRegion MemoryRegion;
@@ -116,7 +117,7 @@ struct MemoryRegionOps {
 typedef struct CoalescedMemoryRange CoalescedMemoryRange;
 typedef struct MemoryRegionIoeventfd MemoryRegionIoeventfd;
 
-struct MemoryRegion {
+QIDL_DECLARE_PUBLIC(MemoryRegion, q_immutable) {
     /* All fields are private - violators will be prosecuted */
     const MemoryRegionOps *ops;
     void *opaque;

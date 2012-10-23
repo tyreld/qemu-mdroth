@@ -22,6 +22,9 @@
 
 #include "memory-internal.h"
 
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(MemoryRegion)
+
 unsigned memory_region_transaction_depth = 0;
 static bool global_dirty_log = false;
 
@@ -159,7 +162,7 @@ struct CoalescedMemoryRange {
     QTAILQ_ENTRY(CoalescedMemoryRange) link;
 };
 
-struct MemoryRegionIoeventfd {
+QIDL_DECLARE(MemoryRegionIoeventfd, q_immutable) {
     AddrRange addr;
     bool match_data;
     uint64_t data;
