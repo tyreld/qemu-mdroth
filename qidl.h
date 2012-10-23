@@ -93,7 +93,9 @@
  * q_size(field): for static/dynamically-allocated arrays. specifies the field
  *   in the structure containing the number of elements that should be
  *   serialized. if argument is wrapped in parenthesis it is instead interpreted
- *   as an expression that should be invaluated to determine the size.
+ *   as an expression that should be invaluated to determine the size. annotating
+ *   a field in this implies we wish to serialize it, so we also set q_standard
+ *   explicitly to override any default serialization policy for a struct's fields
  */
 #define q_standard QIDL(serialize, standard)
 #define q_immutable QIDL(serialize, immutable)
@@ -101,7 +103,7 @@
 #define q_broken QIDL(serialize, broken)
 #define q_optional QIDL(serialize, optional)
 #define q_elsewhere QIDL(serialize, elsewhere)
-#define q_size(...) QIDL(serialize, size_is, ##__VA_ARGS__)
+#define q_size(...) q_standard QIDL(serialize, size_is, ##__VA_ARGS__)
 
 /* QIDL property annotations/markers
  *
