@@ -6,6 +6,7 @@
 #include "ioport.h"
 #include "memory.h"
 #include "qdev.h"
+#include "qidl.h"
 
 #define ISA_NUM_IRQS 16
 
@@ -31,7 +32,7 @@ struct ISABus {
     qemu_irq *irqs;
 };
 
-struct ISADevice {
+QIDL_DECLARE_PUBLIC(ISADevice) {
     DeviceState qdev;
     uint32_t isairq[2];
     int nirqs;
