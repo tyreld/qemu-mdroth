@@ -15,29 +15,31 @@
 #define TYPE_PCI_BUS "PCI"
 #define PCI_BUS(obj) OBJECT_CHECK(PCIBus, (obj), TYPE_PCI_BUS)
 
-struct PCIBus {
+typedef struct PCIBus PCIBus;
+
+QIDL_DECLARE_PUBLIC(PCIBus) {
     BusState qbus;
-    PCIDMAContextFunc dma_context_fn;
-    void *dma_context_opaque;
+    PCIDMAContextFunc q_immutable dma_context_fn;
+    void q_immutable *dma_context_opaque;
     uint8_t devfn_min;
-    pci_set_irq_fn set_irq;
-    pci_map_irq_fn map_irq;
-    pci_route_irq_fn route_intx_to_irq;
-    pci_hotplug_fn hotplug;
+    pci_set_irq_fn q_immutable set_irq;
+    pci_map_irq_fn q_immutable map_irq;
+    pci_route_irq_fn q_immutable route_intx_to_irq;
+    pci_hotplug_fn q_immutable hotplug;
     DeviceState *hotplug_qdev;
-    void *irq_opaque;
-    PCIDevice *devices[PCI_SLOT_MAX * PCI_FUNC_MAX];
-    PCIDevice *parent_dev;
+    void q_immutable *irq_opaque;
+    PCIDevice q_elsewhere *devices[PCI_SLOT_MAX * PCI_FUNC_MAX];
+    PCIDevice q_elsewhere *parent_dev;
     MemoryRegion *address_space_mem;
     MemoryRegion *address_space_io;
 
-    QLIST_HEAD(, PCIBus) child; /* this will be replaced by qdev later */
-    QLIST_ENTRY(PCIBus) sibling;/* this will be replaced by qdev later */
+    QLIST_HEAD(, PCIBus) q_immutable child; /* this will be replaced by qdev later */
+    QLIST_ENTRY(PCIBus) q_immutable sibling;/* this will be replaced by qdev later */
 
     /* The bus IRQ state is the logical OR of the connected devices.
        Keep a count of the number of devices with raised IRQs.  */
     int nirq;
-    int *irq_count;
+    int *irq_count q_size(nirq);
 };
 
 struct PCIBridge {
