@@ -28,6 +28,8 @@
 #include "qapi/qapi-visit-core.h"
 #include "qidl.h"
 
+QIDL_ENABLE()
+
 #ifdef TARGET_I386
 #include "apic.h"
 #endif
@@ -886,13 +888,6 @@ ISADevice *rtc_init(ISABus *bus, int base_year, qemu_irq intercept_irq)
     return dev;
 }
 
-static Property mc146818rtc_properties[] = {
-    DEFINE_PROP_INT32("base_year", RTCState, base_year, 1980),
-    DEFINE_PROP_LOSTTICKPOLICY("lost_tick_policy", RTCState,
-                               lost_tick_policy, LOST_TICK_DISCARD),
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void rtc_class_initfn(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -900,7 +895,7 @@ static void rtc_class_initfn(ObjectClass *klass, void *data)
     ic->init = rtc_initfn;
     dc->no_user = 1;
     dc->vmsd = &vmstate_rtc;
-    dc->props = mc146818rtc_properties;
+    dc->props = QIDL_PROPERTIES(RTCState);
 }
 
 static TypeInfo mc146818rtc_info = {
