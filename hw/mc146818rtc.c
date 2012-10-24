@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "mc146818rtc.h"
 #include "qapi/qapi-visit-core.h"
+#include "qidl.h"
 
 #ifdef TARGET_I386
 #include "apic.h"
@@ -57,12 +58,14 @@
 #define RTC_CLOCK_RATE            32768
 #define UIP_HOLD_LENGTH           (8 * NSEC_PER_SEC / 32768)
 
-typedef struct RTCState {
+typedef struct RTCState RTCState;
+
+QIDL_DECLARE(RTCState) {
     ISADevice dev;
     MemoryRegion io;
     uint8_t cmos_data[128];
     uint8_t cmos_index;
-    int32_t base_year;
+    int32_t q_property("base_year", 1980) base_year;
     uint64_t base_rtc;
     uint64_t last_update;
     int64_t offset;
@@ -78,11 +81,13 @@ typedef struct RTCState {
     uint16_t irq_reinject_on_ack_count;
     uint32_t irq_coalesced;
     uint32_t period;
-    QEMUTimer *coalesced_timer;
+    bool has_coalesced_timer;
+    QEMUTimer q_optional *coalesced_timer;
     Notifier clock_reset_notifier;
-    LostTickPolicy lost_tick_policy;
+    LostTickPolicy q_property("lost_tick_policy", LOST_TICK_DISCARD) \
+        lost_tick_policy;
     Notifier suspend_notifier;
-} RTCState;
+};
 
 static void rtc_set_time(RTCState *s);
 static void rtc_update_time(RTCState *s);
