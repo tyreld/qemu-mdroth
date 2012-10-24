@@ -15,11 +15,11 @@
 #define QEMU_NOTIFY_H
 
 #include "qemu-queue.h"
+#include "qidl.h"
 
 typedef struct Notifier Notifier;
 
-struct Notifier
-{
+QIDL_DECLARE_PUBLIC(Notifier, q_immutable) {
     void (*notify)(Notifier *notifier, void *data);
     QLIST_ENTRY(Notifier) node;
 };

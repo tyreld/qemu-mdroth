@@ -15,6 +15,10 @@
 
 #include "qemu-common.h"
 #include "notify.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(Notifier)
 
 void notifier_list_init(NotifierList *list)
 {
