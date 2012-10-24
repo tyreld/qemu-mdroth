@@ -22,8 +22,8 @@
     uint32_t d;                             \
     uint64_t q_immutable e;                 \
     uint64_t q_property("f", 42) f;         \
-    char q_property("g") *g;                \
-    char q_property("h") q_immutable *h;
+    char *g;                                \
+    char q_property("h") *h;
 
 void fill_test_struct(void *opaque);
 void check_test_struct(void *opaque);
