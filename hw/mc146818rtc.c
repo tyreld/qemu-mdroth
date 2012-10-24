@@ -812,6 +812,23 @@ static void rtc_get_date(Object *obj, Visitor *v, void *opaque,
     visit_end_struct(v, errp);
 }
 
+static void rtc_get_state(Object *obj, Visitor *v, void *opaque,
+                          const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    RTCState *s = DO_UPCAST(RTCState, dev, isa);
+    QIDL_VISIT_TYPE(RTCState, v, &s, name, errp);
+}
+
+static void rtc_set_state(Object *obj, Visitor *v, void *opaque,
+                          const char *name, Error **errp)
+{
+    ISADevice *isa = ISA_DEVICE(obj);
+    RTCState *s = DO_UPCAST(RTCState, dev, isa);
+    QIDL_VISIT_TYPE(RTCState, v, &s, name, errp);
+    rtc_post_load(s, 3);
+}
+
 static int rtc_initfn(ISADevice *dev)
 {
     RTCState *s = DO_UPCAST(RTCState, dev, dev);
@@ -839,6 +856,7 @@ static int rtc_initfn(ISADevice *dev)
 #ifdef TARGET_I386
     switch (s->lost_tick_policy) {
     case LOST_TICK_SLEW:
+        s->has_coalesced_timer = true;
         s->coalesced_timer =
             qemu_new_timer_ns(rtc_clock, rtc_coalesced_timer, s);
         break;
@@ -866,7 +884,10 @@ static int rtc_initfn(ISADevice *dev)
     qemu_register_reset(rtc_reset, s);
 
     object_property_add(OBJECT(s), "date", "struct tm",
-                        rtc_get_date, NULL, NULL, s, NULL);
+                        rtc_get_date, rtc_get_date, NULL, s, NULL);
+    object_property_add(OBJECT(s), "state", "RTCState",
+                        rtc_get_state, rtc_set_state, NULL, s, NULL);
+    QIDL_SCHEMA_ADD_LINK(RTCState, OBJECT(s), "state_schema", NULL);
 
     return 0;
 }
