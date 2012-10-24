@@ -54,7 +54,6 @@ void check_test_struct(void *opaque)
     g_assert_cmpint(s->c, ==, 0);
     g_assert_cmpint(s->d, ==, UINT32_MAX);
     g_assert_cmpint(s->e, ==, 0);
-    g_assert_cmpint(s->f, ==, UINT64_MAX);
     g_assert_cmpstr(s->g, ==, "test string g");
     g_assert(s->h == NULL);
 }
@@ -71,11 +70,9 @@ void check_test_struct_properties(const Property *props)
 {
     g_assert_cmpstr(props[0].name, ==, "f");
     g_assert_cmpint(props[0].defval, ==, 42);
-    g_assert_cmpstr(props[1].name, ==, "g");
+    g_assert_cmpstr(props[1].name, ==, "h");
     g_assert_cmpint(props[1].defval, ==, 0);
-    g_assert_cmpstr(props[2].name, ==, "h");
-    g_assert_cmpint(props[2].defval, ==, 0);
-    g_assert(props[3].name == NULL);
+    g_assert(props[2].name == NULL);
 }
 
 /* exercise generated code from annotations in main() object file */
