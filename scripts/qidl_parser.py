@@ -313,6 +313,7 @@ def find_node(nodes, name):
     for node in nodes:
         if node['id'] == name:
             return node
+    return None
 
 def parse_file(f):
     nodes = []
@@ -329,12 +330,55 @@ def parse_file(f):
         elif line.startswith("QIDL_START"):
             node = parse_declaration(l)
             nodes.append(node)
+        elif "visit_type_" in line:
+            print line
+            l.pop_line()
         else:
             l.pop_line()
     return nodes
 
+def is_whitelisted(nodes, field):
+    if find_node(nodes, field['type']):
+        return True
+    if field['type'] in supported_native_types:
+        return True
+    return False
+
+# For fields for which an explicit serialization tag was not
+# provided, we attempt to serialize them only if one of the
+# following conditions hold:
+# a) a visitor function visit_type_<name> has already been
+#    implemented and is accessible to the the compilation
+#    unit (i.e. we've pulled in a declaration for such a
+#    function via a header file or declared it somewhere
+#    locally
+# b) we've QIDL_DECLARE()'d the type in question, and that
+#    declaration is visible to the compilation unit
+# c) the field is for a primitive type that we know how to
+#    serialize unambiguously
+#
+# If any of these conditions do not hold, we will mark the
+# field as q_broken so that we can whine about them elsewhere
+# and address them at some point in the future.
+def whitelist_process(nodes):
+    for node in nodes:
+        typename = None
+        fields = []
+        if node.has_key('typedef'):
+            typename = node['typedef']
+            fields = node['type']['fields']
+        elif node.has_key('struct'):
+            typename = node['struct']
+            fields = node['fields']
+        else:
+            raise Exception("top-level neither typedef nor struct")
+        for field in fields:
+            if not is_whitelisted(nodes, field):
+                field['is_broken'] = True
+
 def main():
     nodes = parse_file(sys.stdin)
+    whilelist_process(nodes)
     print json.dumps(nodes, sort_keys=True, indent=2)
 
 if __name__ == '__main__':
