@@ -21,6 +21,7 @@
 
 #include "config.h"
 #include "qemu-common.h"
+#include "qidl.h"
 
 #ifdef TARGET_X86_64
 #define TARGET_LONG_BITS 64
@@ -670,7 +671,9 @@ typedef enum TPRAccess {
     TPR_ACCESS_WRITE,
 } TPRAccess;
 
-typedef struct CPUX86State {
+typedef struct CPUX86State CPUX86State;
+
+QIDL_DECLARE_PUBLIC(CPUX86State) {
     /* standard registers */
     target_ulong regs[CPU_NB_REGS];
     target_ulong eip;
@@ -834,7 +837,7 @@ typedef struct CPUX86State {
     uint64_t xcr0;
 
     TPRAccess tpr_access_type;
-} CPUX86State;
+};
 
 #include "cpu-qom.h"
 

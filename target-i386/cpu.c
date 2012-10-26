@@ -37,6 +37,11 @@
 #include <linux/kvm_para.h>
 #endif
 
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(CPUX86State)
+
 /* feature flags taken from "Intel Processor Identification and the CPUID
  * Instruction" and AMD's "CPUID Specification".  In cases of disagreement
  * between feature naming conventions, aliases may be added.
@@ -1883,6 +1888,22 @@ void x86_cpu_realize(Object *obj, Error **errp)
     cpu_reset(CPU(cpu));
 }
 
+static void x86_cpu_get_state(Object *obj, Visitor *v, void *opaque,
+                              const char *name, Error **errp)
+{
+    X86CPU *cpu = X86_CPU(obj);
+    CPUX86State *env = &cpu->env;
+    QIDL_VISIT_TYPE(CPUX86State, v, &env, name, errp);
+}
+
+static void x86_cpu_set_state(Object *obj, Visitor *v, void *opaque,
+                              const char *name, Error **errp)
+{
+    X86CPU *cpu = X86_CPU(obj);
+    CPUX86State *env = &cpu->env;
+    QIDL_VISIT_TYPE(CPUX86State, v, &env, name, errp);
+}
+
 static void x86_cpu_initfn(Object *obj)
 {
     X86CPU *cpu = X86_CPU(obj);
@@ -1915,6 +1936,9 @@ static void x86_cpu_initfn(Object *obj)
     object_property_add(obj, "tsc-frequency", "int",
                         x86_cpuid_get_tsc_freq,
                         x86_cpuid_set_tsc_freq, NULL, NULL, NULL);
+    object_property_add(obj, "state", "CPUX86State",
+                        x86_cpu_get_state, x86_cpu_set_state, NULL, env, NULL);
+    QIDL_SCHEMA_ADD_LINK(CPUX86State, obj, "state_schema", NULL);
 
     env->cpuid_apic_id = env->cpu_index;
 
