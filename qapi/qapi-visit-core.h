@@ -91,6 +91,7 @@ void visit_type_int8(Visitor *v, int8_t *obj, const char *name, Error **errp);
 void visit_type_int16(Visitor *v, int16_t *obj, const char *name, Error **errp);
 void visit_type_int32(Visitor *v, int32_t *obj, const char *name, Error **errp);
 void visit_type_int64(Visitor *v, int64_t *obj, const char *name, Error **errp);
+void visit_type_long(Visitor *v, long *obj, const char *name, Error **errp);
 void visit_type_size(Visitor *v, uint64_t *obj, const char *name, Error **errp);
 void visit_type_bool(Visitor *v, bool *obj, const char *name, Error **errp);
 void visit_type_str(Visitor *v, char **obj, const char *name, Error **errp);
