@@ -905,6 +905,7 @@ static X86CPU *pc_new_cpu(const char *cpu_model)
 void pc_cpus_init(const char *cpu_model)
 {
     int i;
+    X86CPU *cpu;
 
     /* init CPUs */
     if (cpu_model == NULL) {
@@ -916,7 +917,11 @@ void pc_cpus_init(const char *cpu_model)
     }
 
     for(i = 0; i < smp_cpus; i++) {
-        pc_new_cpu(cpu_model);
+        cpu = pc_new_cpu(cpu_model);
+        gchar *name = g_strdup_printf("cpu[%d]", i);
+        object_property_add_child(container_get(qdev_get_machine(), "/cpu"),
+                                  name, OBJECT(cpu), NULL);
+        g_free(name);
     }
 }
 
