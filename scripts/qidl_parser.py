@@ -13,11 +13,11 @@
 import sys, json
 from lexer import Input, CLexer
 
-def process_annotation(node, params):
+def process_annotation(node, params, set_use_default_tag=False):
     annotation_group = params[0]
     if annotation_group == 'serialize':
         annotation_type = params[1]
-        if annotation_type != 'size_is':
+        if annotation_type != 'size_is' and set_use_default_tag:
             node['use_default_tag'] = False
 
         if annotation_type == 'derived':
@@ -77,18 +77,34 @@ def parse_annotations(l, node):
 
     return node
 
+def parse_modifiers(l, node):
+    modifiers = ['const', 'volatile']
+    while True:
+        if l.peek_type() in modifiers:
+            if l.check_token('const', 'const'):
+                node['is_const'] = True
+            l.pop()
+        else:
+            break
+
 def parse_type(l):
     node = {}
     node['use_default_tag'] = True
     unsigned_types = ['char', 'short', 'int', 'long']
     type_complete = False
-
     typename = ''
-    if l.check_token('const', 'const'):
-        node['is_const'] = True
-        l.pop()
 
-    if l.check_token('struct', 'struct'):
+    parse_modifiers(l, node)
+
+    if l.check_token('struct', 'struct') or l.check_token('union', 'union'):
+        if l.check_token('union', 'union'):
+            node['is_union'] = True
+        typename += l.pop() + ' '
+        if not l.check_token('operator', '{'):
+            typename += l.pop_expected('symbol')
+            type_complete = True
+
+    if l.check_token('union', 'union'):
         typename += l.pop() + ' '
         if not l.check_token('operator', '{'):
             typename += l.pop_expected('symbol')
@@ -102,13 +118,11 @@ def parse_type(l):
             typename += ' int'
             type_complete = True
 
-    if l.check_token('union', 'union'):
-        typename += l.pop() + ' '
-
     if l.check_token('enum', 'enum'):
         typename += l.pop() + ' '
 
-    # we don't currently handle embedded struct declarations, skip them for now
+    # we don't currently handle embedded struct/union declarations, skip them
+    # for now
     if l.check_token('operator', '{'):
         open_braces = 1
         while open_braces:
@@ -160,26 +174,54 @@ def parse_var_decl(l, repeating_type=None):
             elif l.check_token('operator', ')'):
                 open_parens -= 1
             l.pop()
+    elif l.check_token('operator', ';'):
+        if node.has_key('is_union') and node['is_union']:
+            variable = None
+        else:
+            raise Exception("%s: unnamed, non-union struct member", l)
+    elif l.check_token('operator', '*'):
+        node['is_pointer'] = True
+        l.pop()
+        while l.check_token('operator', '*'):
+            if node.has_key('pointer_nesting'):
+                node['pointer_nesting'] += 1
+            else:
+                node['pointer_nested'] = 1
+            l.pop()
+        variable = l.pop_expected('symbol')
     else:
         variable = l.pop_expected('symbol')
     node['variable'] = variable
 
-    if l.check_token('operator', '['):
+    dim_expressions = []
+    is_array = False
+    while l.check_token('operator', '['):
+        is_array = True
         l.pop()
-        expression = ""
+        dim_expression = ''
         while not l.check_token('operator', ']'):
-            expression += l.pop()
+            dim_expression += l.pop()
         l.pop_expected('operator', ']')
+        dim_expressions.append(dim_expression)
 
+    if is_array:
         if not node.has_key('is_array'):
             node['is_array'] = True
-            if expression.isdigit():
-                expression = int(expression)
-            node['array_size'] = expression
+            for i in range(0, len(dim_expressions)):
+                if dim_expressions[i].isdigit():
+                    dim_expressions[i] = int(dim_expressions[i])
+            if len(dim_expressions) == 1:
+                node['array_size'] = dim_expressions[0]
+            else:
+                node['array_size'] = dim_expressions
         else:
-            if expression.isdigit():
-                expression = int(expression)
-            node['array_capacity'] = expression
+            for i in range(0, len(dim_expressions)):
+                if dim_expressions[i].isdigit():
+                    dim_expressions[i] = int(dim_expressions[i])
+            if len(dim_expressions) == 1:
+                node['array_capacity'] = dim_expressions[0]
+            else:
+                node['array_capacity'] = dim_expressions
 
     node = parse_annotations(l, node)
 
@@ -296,9 +338,9 @@ def parse_declaration(l):
     for field in node['fields']:
         if field['use_default_tag'] == True:
             if immutable_by_default(field):
-                process_annotation(field, ['serialize', 'immutable'])
+                process_annotation(field, ['serialize', 'immutable'], False)
             else:
-                process_annotation(field, ['serialize', default_tag])
+                process_annotation(field, ['serialize', default_tag], False)
 
     l.pop_expected('operator', ';')
     node['id'] = declaration_info['id']
@@ -315,33 +357,23 @@ def find_node(nodes, name):
             return node
     return None
 
-def parse_file(f):
-    nodes = []
-    filtered_tokens = ['whitespace', 'comment', 'directive']
-    l = CLexer(Input(f), filtered_tokens)
-    while not l.eof():
-        line = l.peek_line()
-        if line.startswith("QIDL_START_IMPLEMENTATION("):
-            info = parse_declaration_params(l)
-            node = find_node(nodes, info['id'])
-            node['implement'] = info['implement']
-            node['do_state'] = info['do_state']
-            node['do_properties'] = info['do_properties']
-        elif line.startswith("QIDL_START"):
-            node = parse_declaration(l)
-            nodes.append(node)
-        elif "visit_type_" in line:
-            print line
-            l.pop_line()
-        else:
-            l.pop_line()
-    return nodes
-
-def is_whitelisted(nodes, field):
+def is_whitelisted(field, nodes=[], existing_visitors=None):
+    supported_native_types=['bool', '_Bool', 'unsigned', 'short', 'int',
+                            'long', 'float', 'double' ]
+    supported_pointer_types=['char']
+    if not (field.has_key('use_default_tag') and field['use_default_tag']):
+        return True
     if find_node(nodes, field['type']):
         return True
-    if field['type'] in supported_native_types:
-        return True
+    if existing_visitors:
+        if field['type'].rsplit('_t')[0] in existing_visitors:
+            return True
+    if field.has_key('is_pointer') and field['is_pointer']:
+        if field['type'] in supported_pointer_types:
+            return True
+    else:
+        if field['type'] in supported_native_types:
+            return True
     return False
 
 # For fields for which an explicit serialization tag was not
@@ -360,7 +392,7 @@ def is_whitelisted(nodes, field):
 # If any of these conditions do not hold, we will mark the
 # field as q_broken so that we can whine about them elsewhere
 # and address them at some point in the future.
-def whitelist_process(nodes):
+def whitelist_process(nodes, existing_visitors=None):
     for node in nodes:
         typename = None
         fields = []
@@ -373,12 +405,39 @@ def whitelist_process(nodes):
         else:
             raise Exception("top-level neither typedef nor struct")
         for field in fields:
-            if not is_whitelisted(nodes, field):
+            if not is_whitelisted(field, nodes, existing_visitors):
                 field['is_broken'] = True
+
+def parse_file(f):
+    nodes = []
+    filtered_tokens = ['whitespace', 'comment', 'directive']
+    existing_visitors = set()
+    l = CLexer(Input(f), filtered_tokens)
+    while not l.eof():
+        line = l.peek_line()
+        if line.startswith("QIDL_START_IMPLEMENTATION("):
+            info = parse_declaration_params(l)
+            node = find_node(nodes, info['id'])
+            node['implement'] = info['implement']
+            node['do_state'] = info['do_state']
+            node['do_properties'] = info['do_properties']
+        elif line.startswith("QIDL_START"):
+            node = parse_declaration(l)
+            nodes.append(node)
+        elif 'visit_type_' in line:
+            words = line.split()
+            for word in words:
+                if 'visit_type_' in word:
+                    typename = word.split('_')[-1].split('(')[0]
+                    existing_visitors.add(typename)
+            l.pop_line()
+        else:
+            l.pop_line()
+    whitelist_process(nodes, existing_visitors)
+    return nodes
 
 def main():
     nodes = parse_file(sys.stdin)
-    whilelist_process(nodes)
     print json.dumps(nodes, sort_keys=True, indent=2)
 
 if __name__ == '__main__':
