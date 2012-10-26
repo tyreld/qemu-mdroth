@@ -234,6 +234,24 @@ void visit_type_int64(Visitor *v, int64_t *obj, const char *name, Error **errp)
     }
 }
 
+void visit_type_long(Visitor *v, long *obj, const char *name, Error **errp)
+{
+    int64_t value;
+    if (!error_is_set(errp)) {
+        if (v->type_long) {
+            v->type_long(v, obj, name, errp);
+        } else {
+            value = *obj;
+            visit_type_int64(v, &value, name, errp);
+            if (value < LONG_MIN || value > LONG_MAX) {
+                error_set(errp, QERR_INVALID_PARAMETER_VALUE, name ? name : "null",
+                          "long");
+            }
+            *obj = value;
+        }
+    }
+}
+
 void visit_type_size(Visitor *v, uint64_t *obj, const char *name, Error **errp)
 {
     if (!error_is_set(errp)) {
