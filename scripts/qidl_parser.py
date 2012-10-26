@@ -358,6 +358,7 @@ def find_node(nodes, name):
     return None
 
 def is_whitelisted(field, nodes=[], existing_visitors=None):
+    return True
     supported_native_types=['bool', '_Bool', 'unsigned', 'short', 'int',
                             'long', 'float', 'double' ]
     supported_pointer_types=['char']
