@@ -151,6 +151,7 @@
 #define QIDL_PROPERTIES(name) \
     qidl_data_##name.properties
 
-QIDL_IMMUTABLE_TYPES(Notifier, MemoryRegion, MemoryRegionIoeventfd)
+QIDL_IMMUTABLE_TYPES(Notifier, MemoryRegion, MemoryRegionIoeventfd, \
+                     DeviceState, BusState)
 
 #endif
