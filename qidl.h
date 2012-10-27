@@ -42,6 +42,7 @@
 
 #define QIDL(...) QIDL(__VA_ARGS__)
 #define QIDL_START(name, ...) QIDL_START(name, ##__VA_ARGS__)
+#define QIDL_IMMUTABLE_TYPES(...) QIDL_IMMUTABLE_TYPES(__VA_ARGS__)
 
 #else
 
@@ -50,6 +51,7 @@
     QIDL_DATA_DECLARE(name) \
     extern QIDLData##name qidl_data_##name; \
     void visit_type_##name(Visitor *, struct name **, const char *, Error **);
+#define QIDL_IMMUTABLE_TYPES(...)
 #ifdef QIDL_ENABLED
 #define QIDL_START(name, ...) \
     QIDL_DATA_DECLARE(name) \
@@ -158,5 +160,9 @@
 
 #define QIDL_PROPERTIES(name) \
     qidl_data_##name.properties
+
+QIDL_IMMUTABLE_TYPES(Notifier, MemoryRegion, MemoryRegionIoeventfd, \
+                     DeviceState, BusState, DMAContext, qemu_irq, \
+                     SysBusDevice)
 
 #endif
