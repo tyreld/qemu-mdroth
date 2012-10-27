@@ -42,10 +42,12 @@
 
 #define QIDL(...) QIDL(__VA_ARGS__)
 #define QIDL_START(name, ...) QIDL_START(name, ##__VA_ARGS__)
+#define QIDL_IMMUTABLE_TYPES(...) QIDL_IMMUTABLE_TYPES(__VA_ARGS__)
 
 #else
 
 #define QIDL(...)
+#define QIDL_IMMUTABLE_TYPES(...)
 #ifdef QIDL_ENABLED
 #define QIDL_START(name, ...) \
     QIDL_DATA_DECLARE(name) \
@@ -148,5 +150,7 @@
 
 #define QIDL_PROPERTIES(name) \
     qidl_data_##name.properties
+
+QIDL_IMMUTABLE_TYPES(Notifier)
 
 #endif
