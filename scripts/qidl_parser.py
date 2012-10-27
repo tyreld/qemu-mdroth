@@ -270,21 +270,9 @@ def get_default_tag(params):
     finally:
         return default_tag
 
-def parse_declaration_params(l):
-    declaration_info = {}
+def parse_params(l):
     params = []
-    arg_string = ""
     parens = 0
-    implement = True
-    is_public = False
-    if l.check_token('symbol', 'QIDL_START_IMPLEMENTATION'):
-        l.pop()
-    elif l.check_token('symbol', 'QIDL_START_PUBLIC'):
-        implement = False
-        is_public = True
-        l.pop()
-    else:
-        l.pop_expected('symbol', 'QIDL_START')
     while not l.eof():
         if l.check_token('operator', '('):
             parens += 1
@@ -300,6 +288,28 @@ def parse_declaration_params(l):
     if parens != 0:
         raise Exception("%s: unmatched parenthesis in QIDL macro", l)
 
+    return params
+
+def parse_immutable_types(l):
+    params = parse_params(l)
+    return list(params)
+
+def parse_declaration_params(l):
+    declaration_info = {}
+    params = None
+    arg_string = ""
+    implement = True
+    is_public = False
+    if l.check_token('symbol', 'QIDL_START_IMPLEMENTATION'):
+        l.pop()
+    elif l.check_token('symbol', 'QIDL_START_PUBLIC'):
+        implement = False
+        is_public = True
+        l.pop()
+    else:
+        l.pop_expected('symbol', 'QIDL_START')
+
+    params = parse_params(l)
     declaration_info['id'] = params[0]
     declaration_info['do_state'] = True
     declaration_info['do_properties'] = True
@@ -357,26 +367,6 @@ def find_node(nodes, name):
             return node
     return None
 
-def is_whitelisted(field, nodes=[], existing_visitors=None):
-    return True
-    supported_native_types=['bool', '_Bool', 'unsigned', 'short', 'int',
-                            'long', 'float', 'double' ]
-    supported_pointer_types=['char']
-    if not (field.has_key('use_default_tag') and field['use_default_tag']):
-        return True
-    if find_node(nodes, field['type']):
-        return True
-    if existing_visitors:
-        if field['type'].rsplit('_t')[0] in existing_visitors:
-            return True
-    if field.has_key('is_pointer') and field['is_pointer']:
-        if field['type'] in supported_pointer_types:
-            return True
-    else:
-        if field['type'] in supported_native_types:
-            return True
-    return False
-
 # For fields for which an explicit serialization tag was not
 # provided, we attempt to serialize them only if one of the
 # following conditions hold:
@@ -393,7 +383,7 @@ def is_whitelisted(field, nodes=[], existing_visitors=None):
 # If any of these conditions do not hold, we will mark the
 # field as q_broken so that we can whine about them elsewhere
 # and address them at some point in the future.
-def whitelist_process(nodes, existing_visitors=None):
+def process_immutable_list(nodes, immutable_types):
     for node in nodes:
         typename = None
         fields = []
@@ -405,13 +395,16 @@ def whitelist_process(nodes, existing_visitors=None):
             fields = node['fields']
         else:
             raise Exception("top-level neither typedef nor struct")
+
         for field in fields:
-            if not is_whitelisted(field, nodes, existing_visitors):
-                field['is_broken'] = True
+            if field.has_key('use_default_tag') and field['use_default_tag']:
+                if field['type'] in immutable_types:
+                    field['is_immutable'] = True
 
 def parse_file(f):
     nodes = []
     filtered_tokens = ['whitespace', 'comment', 'directive']
+    immutable_types = []
     existing_visitors = set()
     l = CLexer(Input(f), filtered_tokens)
     while not l.eof():
@@ -425,6 +418,8 @@ def parse_file(f):
         elif line.startswith("QIDL_START"):
             node = parse_declaration(l)
             nodes.append(node)
+        elif line.startswith("QIDL_IMMUTABLE_TYPES("):
+            immutable_types = parse_immutable_types(l)
         elif 'visit_type_' in line:
             words = line.split()
             for word in words:
@@ -434,11 +429,11 @@ def parse_file(f):
             l.pop_line()
         else:
             l.pop_line()
-    whitelist_process(nodes, existing_visitors)
+    process_immutable_list(nodes, immutable_types)
     return nodes
 
 def main():
-    nodes = parse_file(sys.stdin)
+    nodes, immutable_types = parse_file(sys.stdin)
     print json.dumps(nodes, sort_keys=True, indent=2)
 
 if __name__ == '__main__':
