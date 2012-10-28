@@ -152,6 +152,6 @@
     qidl_data_##name.properties
 
 QIDL_IMMUTABLE_TYPES(Notifier, MemoryRegion, MemoryRegionIoeventfd, \
-                     DeviceState, BusState, DMAContext)
+                     DeviceState, BusState, DMAContext, qemu_irq)
 
 #endif
