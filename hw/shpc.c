@@ -6,6 +6,10 @@
 #include "pci.h"
 #include "pci_internals.h"
 #include "msi.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(SHPCDevice)
 
 /* TODO: model power only and disabled slot states. */
 /* TODO: handle SERR and wakeups */
@@ -193,7 +197,7 @@ void shpc_reset(PCIDevice *d)
     SHPCDevice *shpc = d->shpc;
     int nslots = shpc->nslots;
     int i;
-    memset(shpc->config, 0, SHPC_SIZEOF(d));
+    memset(shpc->config, 0, shpc->config_size);
     pci_set_byte(shpc->config + SHPC_NSLOTS, nslots);
     pci_set_long(shpc->config + SHPC_SLOTS_33, nslots);
     pci_set_long(shpc->config + SHPC_SLOTS_66, 0);
@@ -392,10 +396,10 @@ static void shpc_write(PCIDevice *d, unsigned addr, uint64_t val, int l)
 {
     SHPCDevice *shpc = d->shpc;
     int i;
-    if (addr >= SHPC_SIZEOF(d)) {
+    if (addr >= shpc->config_size) {
         return;
     }
-    l = MIN(l, SHPC_SIZEOF(d) - addr);
+    l = MIN(l, shpc->config_size - addr);
 
     /* TODO: code duplicated from pci.c */
     for (i = 0; i < l; val >>= 8, ++i) {
@@ -415,10 +419,10 @@ static void shpc_write(PCIDevice *d, unsigned addr, uint64_t val, int l)
 static uint64_t shpc_read(PCIDevice *d, unsigned addr, int l)
 {
     uint64_t val = 0x0;
-    if (addr >= SHPC_SIZEOF(d)) {
+    if (addr >= d->shpc->config_size) {
         return val;
     }
-    l = MIN(l, SHPC_SIZEOF(d) - addr);
+    l = MIN(l, d->shpc->config_size - addr);
     memcpy(&val, d->shpc->config + addr, l);
     return val;
 }
@@ -571,10 +575,11 @@ int shpc_init(PCIDevice *d, PCIBus *sec_bus, MemoryRegion *bar, unsigned offset)
         return -EINVAL;
     }
     shpc->nslots = nslots;
-    shpc->config = g_malloc0(SHPC_SIZEOF(d));
-    shpc->cmask = g_malloc0(SHPC_SIZEOF(d));
-    shpc->wmask = g_malloc0(SHPC_SIZEOF(d));
-    shpc->w1cmask = g_malloc0(SHPC_SIZEOF(d));
+    shpc->config_size = SHPC_SIZEOF(d);
+    shpc->config = g_malloc0(shpc->config_size);
+    shpc->cmask = g_malloc0(shpc->config_size);
+    shpc->wmask = g_malloc0(shpc->config_size);
+    shpc->w1cmask = g_malloc0(shpc->config_size);
 
     shpc_reset(d);
 
@@ -612,7 +617,7 @@ int shpc_init(PCIDevice *d, PCIBus *sec_bus, MemoryRegion *bar, unsigned offset)
 
     /* TODO: init cmask */
     memory_region_init_io(&shpc->mmio, &shpc_mmio_ops, d, "shpc-mmio",
-                          SHPC_SIZEOF(d));
+                          shpc->config_size);
     shpc_cap_update_dword(d);
     memory_region_add_subregion(bar, offset, &shpc->mmio);
     pci_bus_hotplug(sec_bus, shpc_device_hotplug, &d->qdev);
@@ -658,19 +663,24 @@ void shpc_cap_write_config(PCIDevice *d, uint32_t addr, uint32_t val, int l)
 static void shpc_save(QEMUFile *f, void *pv, size_t size)
 {
     PCIDevice *d = container_of(pv, PCIDevice, shpc);
-    qemu_put_buffer(f, d->shpc->config, SHPC_SIZEOF(d));
+    qemu_put_buffer(f, d->shpc->config, d->shpc->config_size);
+}
+
+void shpc_post_load(PCIDevice *d)
+{
+    /* Make sure we don't lose notifications. An extra interrupt is harmless. */
+    d->shpc->msi_requested = 0;
+    shpc_interrupt_update(d);
 }
 
 static int shpc_load(QEMUFile *f, void *pv, size_t size)
 {
     PCIDevice *d = container_of(pv, PCIDevice, shpc);
-    int ret = qemu_get_buffer(f, d->shpc->config, SHPC_SIZEOF(d));
-    if (ret != SHPC_SIZEOF(d)) {
+    int ret = qemu_get_buffer(f, d->shpc->config, d->shpc->config_size);
+    if (ret != d->shpc->config_size) {
         return -EINVAL;
     }
-    /* Make sure we don't lose notifications. An extra interrupt is harmless. */
-    d->shpc->msi_requested = 0;
-    shpc_interrupt_update(d);
+    shpc_post_load(d);
     return 0;
 }
 
