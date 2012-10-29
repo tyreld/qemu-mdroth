@@ -26,19 +26,23 @@
 #include "slotid_cap.h"
 #include "memory.h"
 #include "pci_internals.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
 
 #define REDHAT_PCI_VENDOR_ID 0x1b36
 #define PCI_BRIDGE_DEV_VENDOR_ID REDHAT_PCI_VENDOR_ID
 #define PCI_BRIDGE_DEV_DEVICE_ID 0x1
 
-struct PCIBridgeDev {
+typedef struct PCIBridgeDev PCIBridgeDev;
+
+QIDL_DECLARE(PCIBridgeDev) {
     PCIBridge bridge;
     MemoryRegion bar;
     uint8_t chassis_nr;
 #define PCI_BRIDGE_DEV_F_MSI_REQ 0
     uint32_t flags;
 };
-typedef struct PCIBridgeDev PCIBridgeDev;
 
 /* Mapping mandated by PCI-to-PCI Bridge architecture specification,
  * revision 1.2 */
@@ -47,6 +51,28 @@ static int pci_bridge_dev_map_irq_fn(PCIDevice *dev, int irq_num)
 {
     return (irq_num + PCI_SLOT(dev->devfn)) % PCI_NUM_PINS;
 }
+
+static void pci_bridge_dev_get_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCIBridge *br = DO_UPCAST(PCIBridge, dev, pci);
+    PCIBridgeDev *d = DO_UPCAST(PCIBridgeDev, bridge, br);
+
+    QIDL_VISIT_TYPE(PCIBridgeDev, v, &d, name, errp);
+}
+
+static void pci_bridge_dev_set_state(Object *obj, Visitor *v, void *opaque,
+                                     const char *name, Error **errp)
+{
+    PCIDevice *pci = PCI_DEVICE(obj);
+    PCIBridge *br = DO_UPCAST(PCIBridge, dev, pci);
+    PCIBridgeDev *d = DO_UPCAST(PCIBridgeDev, bridge, br);
+
+    QIDL_VISIT_TYPE(PCIBridgeDev, v, &d, name, errp);
+    shpc_post_load(pci);
+}
+
 
 static int pci_bridge_dev_initfn(PCIDevice *dev)
 {
@@ -80,6 +106,10 @@ static int pci_bridge_dev_initfn(PCIDevice *dev)
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY |
 		     PCI_BASE_ADDRESS_MEM_TYPE_64, &bridge_dev->bar);
     dev->config[PCI_INTERRUPT_PIN] = 0x1;
+    object_property_add(OBJECT(dev), "state", "PCIBridgeDev",
+                        pci_bridge_dev_get_state, pci_bridge_dev_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(PCIBridgeDev, OBJECT(dev), "state_schema", NULL);
     return 0;
 msi_error:
     slotid_cap_cleanup(dev);

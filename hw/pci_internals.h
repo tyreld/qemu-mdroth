@@ -42,11 +42,11 @@ QIDL_DECLARE_PUBLIC(PCIBus) {
     int *irq_count q_size(nirq);
 };
 
-struct PCIBridge {
+QIDL_DECLARE_PUBLIC(PCIBridge) {
     PCIDevice dev;
 
     /* private member */
-    PCIBus sec_bus;
+    PCIBus q_elsewhere sec_bus;
     /*
      * Memory regions for the bridge's address spaces.  These regions are not
      * directly added to system_memory/system_io or its descendants.
@@ -65,7 +65,7 @@ struct PCIBridge {
     MemoryRegion alias_pref_mem;
     MemoryRegion alias_mem;
     MemoryRegion alias_io;
-    pci_map_irq_fn map_irq;
+    pci_map_irq_fn q_immutable map_irq;
     const char *bus_name;
 };
 
