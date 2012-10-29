@@ -18,6 +18,14 @@ import getopt
 import errno
 import types
 
+def generate_visit_carray_as_string(name, info):
+    return mcgen('''
+char *%(name)s_ptr = (char *)&(*obj)->%(name)s;
+visit_type_str(m, &%(name)s_ptr, "%(name)s", errp);
+''',
+                 name=name)
+
+
 def generate_visit_carray_body(name, info):
     if info['array_size'][0].isdigit():
         array_size = info['array_size']
@@ -144,7 +152,10 @@ if (obj && (*obj)->%(prefix)shas_%(c_name)s) {
         else:
             if annotated:
                 if isinstance(argentry['type'], types.ListType):
-                    ret += generate_visit_carray_body(argname, argentry)
+                    if argentry.has_key('is_string') and argentry['is_string'] == 'true':
+                        ret += generate_visit_carray_as_string(argname, argentry)
+                    else:
+                        ret += generate_visit_carray_body(argname, argentry)
                 elif argentry.has_key('embedded') and argentry['embedded'] == 'true':
                     tmp_ptr_name = "%s_%s_ptr" % (c_var(field_prefix).replace(".", ""), c_var(argname))
                     ret += mcgen('''
