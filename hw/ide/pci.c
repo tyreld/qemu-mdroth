@@ -28,8 +28,13 @@
 #include <hw/isa.h>
 #include "block.h"
 #include "dma.h"
+#include "qidl.h"
 
 #include <hw/ide/pci.h>
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(BMDMAState)
+QIDL_IMPLEMENT_PUBLIC(PCIIDEState)
 
 #define BMDMA_PAGE_SIZE 4096
 
@@ -380,7 +385,7 @@ static bool ide_bmdma_status_needed(void *opaque)
     return ((bm->status & abused_bits) != 0);
 }
 
-static void ide_bmdma_pre_save(void *opaque)
+void ide_bmdma_pre_save(void *opaque)
 {
     BMDMAState *bm = opaque;
     uint8_t abused_bits = BM_MIGRATION_COMPAT_STATUS_BITS;
@@ -458,7 +463,7 @@ static const VMStateDescription vmstate_bmdma = {
     }
 };
 
-static int ide_pci_post_load(void *opaque, int version_id)
+int ide_pci_post_load(void *opaque, int version_id)
 {
     PCIIDEState *d = opaque;
     int i;

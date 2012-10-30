@@ -4,6 +4,9 @@
 #include <hw/ide/internal.h>
 #include "qidl.h"
 
+void ide_bmdma_pre_save(void *opaque);
+int ide_pci_post_load(void *opaque, int version_id);
+
 typedef struct BMDMAState BMDMAState;
 
 QIDL_DECLARE_PUBLIC(BMDMAState) {
