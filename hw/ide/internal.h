@@ -328,6 +328,9 @@ typedef void DMARestartFunc(void *, int, RunState);
 
 typedef struct IDEUnreportedEvents IDEUnreportedEvents;
 
+void ide_drive_pio_pre_save(void *opaque);
+int ide_drive_pio_post_load(void *opaque, int version_id);
+
 QIDL_DECLARE_PUBLIC(IDEUnreportedEvents) {
     bool eject_request;
     bool new_media;

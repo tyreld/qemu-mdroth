@@ -83,6 +83,7 @@ static int ide_qdev_init(DeviceState *qdev)
             goto err;
         }
         bus->master = dev;
+        bus->has_master = true;
         break;
     case 1:
         if (bus->slave) {
@@ -90,6 +91,7 @@ static int ide_qdev_init(DeviceState *qdev)
             goto err;
         }
         bus->slave = dev;
+        bus->has_slave = true;
         break;
     default:
         error_report("Invalid IDE unit %d", dev->unit);
