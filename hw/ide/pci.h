@@ -2,33 +2,36 @@
 #define HW_IDE_PCI_H
 
 #include <hw/ide/internal.h>
+#include "qidl.h"
 
-typedef struct BMDMAState {
-    IDEDMA dma;
+typedef struct BMDMAState BMDMAState;
+
+QIDL_DECLARE_PUBLIC(BMDMAState) {
+    IDEDMA q_immutable dma;
     uint8_t cmd;
     uint8_t status;
     uint32_t addr;
 
-    IDEBus *bus;
+    IDEBus q_elsewhere *bus; /* via parent's corresponding bus */
     /* current transfer state */
     uint32_t cur_addr;
     uint32_t cur_prd_last;
     uint32_t cur_prd_addr;
     uint32_t cur_prd_len;
     uint8_t unit;
-    BlockDriverCompletionFunc *dma_cb;
+    BlockDriverCompletionFunc q_immutable *dma_cb;
     int64_t sector_num;
     uint32_t nsector;
     MemoryRegion addr_ioport;
     MemoryRegion extra_io;
-    QEMUBH *bh;
+    QEMUBH q_immutable *bh;
     qemu_irq irq;
 
     /* Bit 0-2 and 7:   BM status register
      * Bit 3-6:         bus->error_status */
     uint8_t migration_compat_status;
-    struct PCIIDEState *pci_dev;
-} BMDMAState;
+    struct PCIIDEState q_elsewhere *pci_dev; /* via parent */
+};
 
 typedef struct CMD646BAR {
     MemoryRegion cmd;
@@ -37,15 +40,16 @@ typedef struct CMD646BAR {
     struct PCIIDEState *pci_dev;
 } CMD646BAR;
 
-typedef struct PCIIDEState {
+typedef struct PCIIDEState PCIIDEState;
+
+QIDL_DECLARE_PUBLIC(PCIIDEState) {
     PCIDevice dev;
     IDEBus bus[2];
     BMDMAState bmdma[2];
-    uint32_t secondary; /* used only for cmd646 */
+    uint32_t q_immutable secondary; /* used only for cmd646 */
     MemoryRegion bmdma_bar;
-    CMD646BAR cmd646_bar[2]; /* used only for cmd646 */
-} PCIIDEState;
-
+    CMD646BAR q_immutable cmd646_bar[2]; /* used only for cmd646 */
+};
 
 static inline IDEState *bmdma_active_if(BMDMAState *bmdma)
 {
