@@ -13,6 +13,7 @@
 #include "sysemu.h"
 #include "hw/block-common.h"
 #include "hw/scsi-defs.h"
+#include "qidl.h"
 
 /* debug IDE devices */
 //#define DEBUG_IDE
@@ -325,7 +326,9 @@ typedef int DMAFunc(IDEDMA *);
 typedef int DMAIntFunc(IDEDMA *, int);
 typedef void DMARestartFunc(void *, int, RunState);
 
-struct unreported_events {
+typedef struct IDEUnreportedEvents IDEUnreportedEvents;
+
+QIDL_DECLARE_PUBLIC(IDEUnreportedEvents) {
     bool eject_request;
     bool new_media;
 };
@@ -340,19 +343,20 @@ enum ide_dma_cmd {
 	((s)->dma_cmd == IDE_DMA_READ)
 
 /* NOTE: IDEState represents in fact one drive */
-struct IDEState {
-    IDEBus *bus;
+QIDL_DECLARE_PUBLIC(IDEState) {
+    IDEBus q_elsewhere *bus; /* elsewhere via out parent IDEBus */
     uint8_t unit;
     /* ide config */
-    IDEDriveKind drive_kind;
+    IDEDriveKind q_immutable drive_kind;
     int cylinders, heads, sectors, chs_trans;
     int64_t nb_sectors;
     int mult_sectors;
     int identify_set;
-    uint8_t identify_data[512];
+    bool has_identify_data; /* set based on identify_set pre-save */
+    uint8_t q_optional identify_data[512];
     int drive_serial;
-    char drive_serial_str[21];
-    char drive_model_str[41];
+    char q_string drive_serial_str[21];
+    char q_string drive_model_str[41];
     uint64_t wwn;
     /* ide regs */
     uint8_t feature;
@@ -373,10 +377,10 @@ struct IDEState {
 
     /* set for lba48 access */
     uint8_t lba48;
-    BlockDriverState *bs;
-    char version[9];
+    BlockDriverState q_elsewhere *bs;
+    char q_string version[9];
     /* ATAPI specific */
-    struct unreported_events events;
+    IDEUnreportedEvents events;
     uint8_t sense_key;
     uint8_t asc;
     bool tray_open;
@@ -388,40 +392,40 @@ struct IDEState {
     int lba;
     int cd_sector_size;
     int atapi_dma; /* true if dma is requested for the packet cmd */
-    BlockAcctCookie acct;
-    BlockDriverAIOCB *pio_aiocb;
-    struct iovec iov;
-    QEMUIOVector qiov;
+    BlockAcctCookie q_immutable acct;
+    BlockDriverAIOCB q_immutable *pio_aiocb;
+    struct iovec q_derived iov; /* derived from io_buffer/n_sector/req_nb_sectors */
+    QEMUIOVector q_derived qiov; /* derived from iov */
     /* ATA DMA state */
     int io_buffer_offset;
     int io_buffer_size;
-    QEMUSGList sg;
-    /* PIO transfer handling */
-    int req_nb_sectors; /* number of sectors per interrupt */
-    EndTransferFunc *end_transfer_func;
-    uint8_t *data_ptr;
-    uint8_t *data_end;
-    uint8_t *io_buffer;
+    QEMUSGList q_immutable sg;
     /* PIO save/restore */
     int32_t io_buffer_total_len;
     int cur_io_buffer_offset;
     int cur_io_buffer_len;
     uint8_t end_transfer_fn_idx;
+    /* PIO transfer handling */
+    int req_nb_sectors; /* number of sectors per interrupt */
+    EndTransferFunc q_immutable *end_transfer_func;
+    uint8_t q_derived *data_end;
+    uint8_t q_derived *data_ptr;
+    uint8_t q_size(io_buffer_total_len) *io_buffer;
     QEMUTimer *sector_write_timer; /* only used for win2k install hack */
     uint32_t irq_count; /* counts IRQs when using win2k install hack */
     /* CF-ATA extended error */
     uint8_t ext_error;
     /* CF-ATA metadata storage */
     uint32_t mdata_size;
-    uint8_t *mdata_storage;
+    uint8_t q_size(mdata_size) *mdata_storage;
     int media_changed;
-    enum ide_dma_cmd dma_cmd;
+    enum ide_dma_cmd q_immutable dma_cmd;
     /* SMART */
     uint8_t smart_enabled;
     uint8_t smart_autosave;
     int smart_errors;
     uint8_t smart_selftest_count;
-    uint8_t *smart_selftest_data;
+    uint8_t q_size(smart_selftest_count) *smart_selftest_data;
     /* AHCI */
     int ncq_queues;
 };
@@ -445,13 +449,15 @@ struct IDEDMA {
     BlockDriverAIOCB *aiocb;
 };
 
-struct IDEBus {
+QIDL_DECLARE_PUBLIC(IDEBus) {
     BusState qbus;
-    IDEDevice *master;
-    IDEDevice *slave;
+    bool has_master;
+    IDEDevice q_optional *master;
+    bool has_slave;
+    IDEDevice q_optional *slave;
     IDEState ifs[2];
     int bus_id;
-    IDEDMA *dma;
+    IDEDMA q_elsewhere *dma; /* either NOP/immutable, or via PCIIDEState.bmdma */
     uint8_t unit;
     uint8_t cmd;
     qemu_irq irq;
@@ -472,10 +478,10 @@ typedef struct IDEDeviceClass {
     int (*init)(IDEDevice *dev);
 } IDEDeviceClass;
 
-struct IDEDevice {
+QIDL_DECLARE_PUBLIC(IDEDevice) {
     DeviceState qdev;
     uint32_t unit;
-    BlockConf conf;
+    BlockConf q_immutable conf;
     int chs_trans;
     char *version;
     char *serial;
