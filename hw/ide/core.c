@@ -32,8 +32,15 @@
 #include "dma.h"
 #include "hw/block-common.h"
 #include "blockdev.h"
+#include "qidl.h"
 
 #include <hw/ide/internal.h>
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(IDEDevice)
+QIDL_IMPLEMENT_PUBLIC(IDEUnreportedEvents)
+QIDL_IMPLEMENT_PUBLIC(IDEState)
+QIDL_IMPLEMENT_PUBLIC(IDEBus)
 
 /* These values were based on a Seagate ST3500418AS but have been modified
    to make more sense in QEMU */
@@ -2159,7 +2166,7 @@ static int ide_drive_post_load(void *opaque, int version_id)
     return 0;
 }
 
-static int ide_drive_pio_post_load(void *opaque, int version_id)
+int ide_drive_pio_post_load(void *opaque, int version_id)
 {
     IDEState *s = opaque;
 
@@ -2173,7 +2180,7 @@ static int ide_drive_pio_post_load(void *opaque, int version_id)
     return 0;
 }
 
-static void ide_drive_pio_pre_save(void *opaque)
+void ide_drive_pio_pre_save(void *opaque)
 {
     IDEState *s = opaque;
     int idx;
@@ -2189,6 +2196,7 @@ static void ide_drive_pio_pre_save(void *opaque)
     } else {
         s->end_transfer_fn_idx = idx;
     }
+    s->has_identify_data = s->identify_set;
 }
 
 static bool ide_drive_pio_state_needed(void *opaque)
