@@ -55,11 +55,11 @@ struct PCIBridgeWindows {
     MemoryRegion alias_io;
 };
 
-struct PCIBridge {
+QIDL_DECLARE_PUBLIC(PCIBridge) {
     PCIDevice dev;
 
     /* private member */
-    PCIBus sec_bus;
+    PCIBus q_elsewhere sec_bus;
     /*
      * Memory regions for the bridge's address spaces.  These regions are not
      * directly added to system_memory/system_io or its descendants.
@@ -71,9 +71,9 @@ struct PCIBridge {
     MemoryRegion address_space_mem;
     MemoryRegion address_space_io;
 
-    PCIBridgeWindows *windows;
+    PCIBridgeWindows q_immutable *windows;
 
-    pci_map_irq_fn map_irq;
+    pci_map_irq_fn q_immutable map_irq;
     const char *bus_name;
 };
 
