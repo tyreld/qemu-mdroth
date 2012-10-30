@@ -27,20 +27,23 @@
 #include <hw/isa.h>
 #include "block.h"
 #include "dma.h"
+#include "qidl.h"
 
 #include <hw/ide/internal.h>
 
 /***********************************************************/
 /* ISA IDE definitions */
 
-typedef struct ISAIDEState {
+typedef struct ISAIDEState ISAIDEState;
+
+QIDL_DECLARE(ISAIDEState) {
     ISADevice dev;
     IDEBus    bus;
     uint32_t  iobase;
     uint32_t  iobase2;
     uint32_t  isairq;
     qemu_irq  irq;
-} ISAIDEState;
+};
 
 static void isa_ide_reset(DeviceState *d)
 {
