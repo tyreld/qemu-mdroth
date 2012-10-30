@@ -26,19 +26,21 @@
 #include "slotid_cap.h"
 #include "memory.h"
 #include "pci_internals.h"
+#include "qidl.h"
 
 #define REDHAT_PCI_VENDOR_ID 0x1b36
 #define PCI_BRIDGE_DEV_VENDOR_ID REDHAT_PCI_VENDOR_ID
 #define PCI_BRIDGE_DEV_DEVICE_ID 0x1
 
-struct PCIBridgeDev {
+typedef struct PCIBridgeDev PCIBridgeDev;
+
+QIDL_DECLARE(PCIBridgeDev) {
     PCIBridge bridge;
     MemoryRegion bar;
     uint8_t chassis_nr;
 #define PCI_BRIDGE_DEV_F_MSI_REQ 0
     uint32_t flags;
 };
-typedef struct PCIBridgeDev PCIBridgeDev;
 
 /* Mapping mandated by PCI-to-PCI Bridge architecture specification,
  * revision 1.2 */
