@@ -264,7 +264,8 @@ QIDL_DECLARE_PUBLIC(PCIDevice) {
     PCIExpressDevice q_broken exp; /* TODO: qidl, is PCIEAERLog guest-visible? */
 
     /* SHPC */
-    SHPCDevice q_broken *shpc; /* TODO: qidl, needed for pci-bridge support */
+    bool has_shpc;
+    SHPCDevice *shpc q_optional;
 
     /* Location of option rom */
     char q_property("romfile") *romfile;

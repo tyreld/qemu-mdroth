@@ -35,6 +35,7 @@
 #include "msix.h"
 #include "exec-memory.h"
 #include "qidl.h"
+#include "shpc.h"
 
 QIDL_ENABLE()
 
