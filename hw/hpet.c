@@ -34,6 +34,8 @@
 #include "i8254.h"
 #include "qidl.h"
 
+QIDL_ENABLE()
+
 //#define HPET_DEBUG
 #ifdef HPET_DEBUG
 #define DPRINTF printf
@@ -682,6 +684,24 @@ static void hpet_handle_legacy_irq(void *opaque, int n, int level)
     }
 }
 
+
+static void hpet_get_state(Object *obj, Visitor *v, void *opaque,
+                           const char *name, Error **errp)
+{
+    HPETState *s = FROM_SYSBUS(HPETState, SYS_BUS_DEVICE(obj));
+    hpet_pre_save(s);
+    QIDL_VISIT_TYPE(HPETState, v, &s, name, errp);
+}
+
+static void hpet_set_state(Object *obj, Visitor *v, void *opaque,
+                           const char *name, Error **errp)
+{
+    HPETState *s = FROM_SYSBUS(HPETState, SYS_BUS_DEVICE(obj));
+    hpet_pre_load(s);
+    QIDL_VISIT_TYPE(HPETState, v, &s, name, errp);
+    hpet_post_load(s, -1);
+}
+
 static int hpet_init(SysBusDevice *dev)
 {
     HPETState *s = FROM_SYSBUS(HPETState, dev);
@@ -727,6 +747,11 @@ static int hpet_init(SysBusDevice *dev)
     /* HPET Area */
     memory_region_init_io(&s->iomem, &hpet_ram_ops, s, "hpet", 0x400);
     sysbus_init_mmio(dev, &s->iomem);
+
+    object_property_add(OBJECT(s), "state", "HPETState",
+                        hpet_get_state, hpet_set_state,
+                        NULL, NULL, NULL);
+    QIDL_SCHEMA_ADD_LINK(HPETState, OBJECT(s), "state_schema", NULL);
     return 0;
 }
 
