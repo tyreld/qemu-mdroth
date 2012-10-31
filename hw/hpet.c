@@ -32,6 +32,7 @@
 #include "sysbus.h"
 #include "mc146818rtc.h"
 #include "i8254.h"
+#include "qidl.h"
 
 //#define HPET_DEBUG
 #ifdef HPET_DEBUG
@@ -42,11 +43,13 @@
 
 #define HPET_MSI_SUPPORT        0
 
-struct HPETState;
-typedef struct HPETTimer {  /* timers */
+typedef struct HPETTimer HPETTimer;
+typedef struct HPETState HPETState;
+
+QIDL_DECLARE(HPETTimer) {  /* timers */
     uint8_t tn;             /*timer number*/
     QEMUTimer *qemu_timer;
-    struct HPETState *state;
+    struct HPETState q_elsewhere *state; /* parent state */
     /* Memory-mapped, software visible timer registers */
     uint64_t config;        /* configuration/cap */
     uint64_t cmp;           /* comparator */
@@ -56,9 +59,9 @@ typedef struct HPETTimer {  /* timers */
     uint8_t wrap_flag;      /* timer pop will indicate wrap for one-shot 32-bit
                              * mode. Next pop will be actual timer expiration.
                              */
-} HPETTimer;
+};
 
-typedef struct HPETState {
+QIDL_DECLARE(HPETState) {
     SysBusDevice busdev;
     MemoryRegion iomem;
     uint64_t hpet_offset;
@@ -75,7 +78,7 @@ typedef struct HPETState {
     uint64_t isr;               /* interrupt status reg */
     uint64_t hpet_counter;      /* main counter */
     uint8_t  hpet_id;           /* instance id */
-} HPETState;
+};
 
 static uint32_t hpet_in_legacy_mode(HPETState *s)
 {
