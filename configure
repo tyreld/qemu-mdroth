@@ -224,6 +224,7 @@ coroutine=""
 seccomp=""
 glusterfs=""
 virtio_blk_data_plane=""
+virtio_net_data_plane="yes"
 
 # parse CC options first
 for opt do
@@ -886,6 +887,10 @@ for opt do
   --disable-virtio-blk-data-plane) virtio_blk_data_plane="no"
   ;;
   --enable-virtio-blk-data-plane) virtio_blk_data_plane="yes"
+  ;;
+  --disable-virtio-net-data-plane) virtio_net_data_plane="no"
+  ;;
+  --enable-virtio-net-data-plane) virtio_net_data_plane="yes"
   ;;
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
@@ -3306,6 +3311,7 @@ echo "seccomp support   $seccomp"
 echo "coroutine backend $coroutine_backend"
 echo "GlusterFS support $glusterfs"
 echo "virtio-blk-data-plane $virtio_blk_data_plane"
+echo "virtio-net-data-plane $virtio_net_data_plane"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -3655,6 +3661,10 @@ fi
 
 if test "$virtio_blk_data_plane" = "yes" ; then
   echo "CONFIG_VIRTIO_BLK_DATA_PLANE=y" >> $config_host_mak
+fi
+
+if test "$virtio_net_data_plane" = "yes" ; then
+  echo "CONFIG_VIRTIO_NET_DATA_PLANE=y" >> $config_host_mak
 fi
 
 # USB host support
