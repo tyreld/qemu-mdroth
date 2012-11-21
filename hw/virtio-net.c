@@ -20,6 +20,8 @@
 #include "qemu/timer.h"
 #include "virtio-net.h"
 #include "vhost_net.h"
+#include "hw/dataplane/virtio-net.h"
+#include "migration/migration.h"
 
 #define VIRTIO_NET_VM_VERSION    11
 
@@ -65,6 +67,8 @@ typedef struct VirtIONet
     } mac_table;
     uint32_t *vlans;
     DeviceState *qdev;
+    VirtIONetDataPlane *dataplane;
+    Error *migration_blocker;
 } VirtIONet;
 
 /* TODO
@@ -145,11 +149,15 @@ static void virtio_net_set_status(struct VirtIODevice *vdev, uint8_t status)
 
     virtio_net_vhost_status(n, status);
 
-    if (!n->tx_waiting) {
+    if (!n->dataplane && !n->tx_waiting) {
         return;
     }
 
     if (virtio_net_started(n, status) && !n->vhost_started) {
+        if (n->dataplane) {
+            virtio_net_data_plane_start(n->dataplane);
+            return;
+        }
         if (n->tx_timer) {
             qemu_mod_timer(n->tx_timer,
                            qemu_get_clock_ns(vm_clock) + n->tx_timeout);
@@ -157,6 +165,10 @@ static void virtio_net_set_status(struct VirtIODevice *vdev, uint8_t status)
             qemu_bh_schedule(n->tx_bh);
         }
     } else {
+        if (n->dataplane) {
+            virtio_net_data_plane_stop(n->dataplane);
+            return;
+        }
         if (n->tx_timer) {
             qemu_del_timer(n->tx_timer);
         } else {
@@ -294,7 +306,8 @@ static void virtio_net_set_features(VirtIODevice *vdev, uint32_t features)
 {
     VirtIONet *n = to_virtio_net(vdev);
 
-    virtio_net_set_mrg_rx_bufs(n, !!(features & (1 << VIRTIO_NET_F_MRG_RXBUF)));
+    /* TODO: doesn't seem to honor command-line setting? */
+    //virtio_net_set_mrg_rx_bufs(n, !!(features & (1 << VIRTIO_NET_F_MRG_RXBUF)));
 
     if (n->has_vnet_hdr) {
         tap_set_offload(n->nic->nc.peer,
@@ -612,7 +625,7 @@ static ssize_t virtio_net_receive(NetClientState *nc, const uint8_t *buf, size_t
     if (!virtio_net_has_buffers(n, size + n->guest_hdr_len - n->host_hdr_len))
         return 0;
 
-    if (!receive_filter(n, buf, size))
+    if (!n->dataplane && !receive_filter(n, buf, size))
         return size;
 
     offset = i = 0;
@@ -1073,6 +1086,29 @@ VirtIODevice *virtio_net_init(DeviceState *dev, NICConf *conf,
                     virtio_net_save, virtio_net_load, n);
 
     add_boot_device_path(conf->bootindex, dev, "/ethernet-phy@0");
+
+    if (net->data_plane) {
+        if (!conf->peer) {
+            error_report("unable to create dataplane, no peers");
+            return NULL;
+        }
+        if (conf->peer->info->type != NET_CLIENT_OPTIONS_KIND_TAP) {
+            error_report("unable to create dataplane, only tap backend is supported");
+            return NULL;
+        }
+        n->dataplane = virtio_net_data_plane_create(&n->vdev, tap_get_fd(conf->peer),
+                                                    n->has_vnet_hdr);
+        if (!n->dataplane) {
+            error_report("unable to create dataplane");
+            exit(1);
+        }
+        conf->peer->info->poll(conf->peer, false);
+        qemu_set_fd_handler(tap_get_fd(conf->peer), NULL, NULL, NULL);
+
+        error_setg(&n->migration_blocker,
+                   "x-data-plane does not support migration");
+        migrate_add_blocker(n->migration_blocker);
+    }
 
     return &n->vdev;
 }

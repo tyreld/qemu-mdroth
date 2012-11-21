@@ -976,6 +976,9 @@ static Property virtio_net_properties[] = {
     DEFINE_PROP_UINT32("x-txtimer", VirtIOPCIProxy, net.txtimer, TX_TIMER_INTERVAL),
     DEFINE_PROP_INT32("x-txburst", VirtIOPCIProxy, net.txburst, TX_BURST),
     DEFINE_PROP_STRING("tx", VirtIOPCIProxy, net.tx),
+#ifdef CONFIG_VIRTIO_NET_DATA_PLANE
+    DEFINE_PROP_BIT("x-data-plane", VirtIOPCIProxy, net.data_plane, 0, false),
+#endif
     DEFINE_PROP_END_OF_LIST(),
 };
 
