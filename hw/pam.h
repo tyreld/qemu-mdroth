@@ -52,6 +52,7 @@
 
 #include "qemu-common.h"
 #include "memory.h"
+#include "qidl.h"
 
 #define SMRAM_C_BASE    0xa0000
 #define SMRAM_C_END     0xc0000
@@ -81,10 +82,12 @@
 #define SMRAM_C_BASE_SEG_MASK  ((uint8_t)0x7)
 #define SMRAM_C_BASE_SEG       ((uint8_t)0x2)  /* hardwired to b010 */
 
-typedef struct PAMMemoryRegion {
+typedef struct PAMMemoryRegion PAMMemoryRegion;
+
+QIDL_DECLARE_PUBLIC(PAMMemoryRegion) {
     MemoryRegion alias[4];  /* index = PAM value */
     unsigned current;
-} PAMMemoryRegion;
+};
 
 void smram_update(MemoryRegion *smram_region, uint8_t smram,
                   uint8_t smm_enabled);

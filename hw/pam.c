@@ -28,6 +28,10 @@
  */
 #include "sysemu.h"
 #include "pam.h"
+#include "qidl.h"
+
+QIDL_ENABLE()
+QIDL_IMPLEMENT_PUBLIC(PAMMemoryRegion)
 
 void smram_update(MemoryRegion *smram_region, uint8_t smram,
                   uint8_t smm_enabled)
