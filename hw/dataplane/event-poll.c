@@ -17,7 +17,8 @@
 
 /* Add an event notifier and its callback for polling */
 void event_poll_add(EventPoll *poll, EventHandler *handler,
-                    EventNotifier *notifier, EventCallback *callback)
+                    EventNotifier *notifier, EventCallback *callback,
+                    bool auto_clear)
 {
     struct epoll_event event = {
         .events = EPOLLIN,
@@ -25,6 +26,7 @@ void event_poll_add(EventPoll *poll, EventHandler *handler,
     };
     handler->notifier = notifier;
     handler->callback = callback;
+    handler->auto_clear = auto_clear;
     if (epoll_ctl(poll->epoll_fd, EPOLL_CTL_ADD,
                   event_notifier_get_fd(notifier), &event) != 0) {
         fprintf(stderr, "failed to add event handler to epoll: %m\n");
@@ -36,6 +38,32 @@ void event_poll_add(EventPoll *poll, EventHandler *handler,
 static void handle_stop(EventHandler *handler)
 {
     /* Do nothing */
+}
+
+void event_poll_mod(EventPoll *poll, EventHandler *handler,
+                    EventNotifier *notifier, EventCallback *callback,
+                    uint32_t events)
+{
+    struct epoll_event event = {
+        .events = events,
+        .data.ptr = handler,
+    };
+
+    if (epoll_ctl(poll->epoll_fd, EPOLL_CTL_MOD,
+                  event_notifier_get_fd(notifier), &event) != 0) {
+        fprintf(stderr, "failed to modify event handler for epoll: %m\n");
+        exit(1);
+    }
+}
+
+/* Delete an event notifier */
+void event_poll_del(EventPoll *poll, EventNotifier *notifier)
+{
+    if (epoll_ctl(poll->epoll_fd, EPOLL_CTL_DEL,
+                  event_notifier_get_fd(notifier), NULL) != 0) {
+        fprintf(stderr, "failed to delete event handler from epoll: %m\n");
+        exit(1);
+    }
 }
 
 void event_poll_init(EventPoll *poll)
@@ -53,7 +81,7 @@ void event_poll_init(EventPoll *poll)
         exit(1);
     }
     event_poll_add(poll, &poll->stop_handler,
-                   &poll->stop_notifier, handle_stop);
+                   &poll->stop_notifier, handle_stop, true);
 }
 
 void event_poll_cleanup(EventPoll *poll)
@@ -63,31 +91,41 @@ void event_poll_cleanup(EventPoll *poll)
     poll->epoll_fd = -1;
 }
 
+#define MAX_EPOLL_EVENTS 4
+
 /* Block until the next event and invoke its callback */
 void event_poll(EventPoll *poll)
 {
     EventHandler *handler;
-    struct epoll_event event;
+    struct epoll_event event[MAX_EPOLL_EVENTS];
     int nevents;
+    int i;
 
     /* Wait for the next event.  Only do one event per call to keep the
      * function simple, this could be changed later. */
     do {
-        nevents = epoll_wait(poll->epoll_fd, &event, 1, -1);
+        nevents = epoll_wait(poll->epoll_fd, event, MAX_EPOLL_EVENTS, -1);
     } while (nevents < 0 && errno == EINTR);
-    if (unlikely(nevents != 1)) {
+    if (unlikely(nevents < 0)) {
         fprintf(stderr, "epoll_wait failed: %m\n");
         exit(1); /* should never happen */
     }
 
-    /* Find out which event handler has become active */
-    handler = event.data.ptr;
+    for (i = 0; i < nevents; i++) {
+        if (!event[i].events) {
+            continue;
+        }
+        /* Find out which event handler has become active */
+        handler = event[i].data.ptr;
 
-    /* Clear the eventfd */
-    event_notifier_test_and_clear(handler->notifier);
+        /* Handle the event */
+        handler->callback(handler);
 
-    /* Handle the event */
-    handler->callback(handler);
+        /* Clear the eventfd */
+        if (handler->auto_clear) {
+            event_notifier_test_and_clear(handler->notifier);
+        }
+    }
 }
 
 /* Stop event_poll()

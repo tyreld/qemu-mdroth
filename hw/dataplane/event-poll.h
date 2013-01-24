@@ -22,6 +22,7 @@ typedef void EventCallback(EventHandler *handler);
 struct EventHandler {
     EventNotifier *notifier;        /* eventfd */
     EventCallback *callback;        /* callback function */
+    bool auto_clear;                /* whether to clear after use */
 };
 
 typedef struct {
@@ -31,7 +32,12 @@ typedef struct {
 } EventPoll;
 
 void event_poll_add(EventPoll *poll, EventHandler *handler,
-                    EventNotifier *notifier, EventCallback *callback);
+                    EventNotifier *notifier, EventCallback *callback,
+                    bool auto_clear);
+void event_poll_mod(EventPoll *poll, EventHandler *handler,
+                    EventNotifier *notifier, EventCallback *callback,
+                    uint32_t events);
+void event_poll_del(EventPoll *poll, EventNotifier *notifier);
 void event_poll_init(EventPoll *poll);
 void event_poll_cleanup(EventPoll *poll);
 void event_poll(EventPoll *poll);
