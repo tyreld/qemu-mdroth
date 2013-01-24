@@ -414,7 +414,7 @@ void virtio_blk_data_plane_start(VirtIOBlockDataPlane *s)
     }
     event_poll_add(&s->event_poll, &s->notify_handler,
                    virtio_queue_get_host_notifier(vq),
-                   handle_notify);
+                   handle_notify, true);
 
     /* Set up ioqueue */
     ioq_init(&s->ioqueue, s->fd, REQ_MAX);
@@ -422,7 +422,8 @@ void virtio_blk_data_plane_start(VirtIOBlockDataPlane *s)
         ioq_put_iocb(&s->ioqueue, &s->requests[i].iocb);
     }
     event_poll_add(&s->event_poll, &s->io_handler,
-                   ioq_get_notifier(&s->ioqueue), handle_io);
+                   ioq_get_notifier(&s->ioqueue), handle_io,
+                   true);
 
     s->started = true;
     trace_virtio_blk_data_plane_start(s);
