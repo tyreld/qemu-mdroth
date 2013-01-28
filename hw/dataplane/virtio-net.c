@@ -57,7 +57,7 @@ typedef struct VirtIONetDataPlaneState {
     uint32_t previous_batch;
 } VirtIONetDataPlaneState; 
 
-typedef struct VirtIONetDataPlane {
+struct VirtIONetDataPlane {
     VirtIODevice *vdev;
     bool started;
     QEMUBH *start_bh;
@@ -65,8 +65,7 @@ typedef struct VirtIONetDataPlane {
     VirtIONetDataPlaneState rx;
     VirtIONetDataPlaneState tx;
     bool has_vnet_hdr;
-} VirtIONetDataPlane;
-
+};
 
 enum {
     VIRTIO_NET_VRING_MAX = 256,
