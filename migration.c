@@ -89,6 +89,50 @@ void qemu_start_incoming_migration(const char *uri, Error **errp)
     }
 }
 
+void qemu_start_incoming_local_migration(const char *path, Error **errp)
+{
+    int fd, ret;
+    QEMUFile *f;
+
+    DPRINTF("Attempting to start an incoming local migration via pipe\n");
+
+    fd = qemu_open(path, O_RDONLY);
+    if (fd == -1) {
+        error_setg_errno(errp, errno, "failed to open source pipe");
+    }
+
+    vmsplice_ram_in(fd, errp);
+    if (error_is_set(errp)) {
+        return;
+    }
+    DPRINTF("done vmsplicing\n");
+
+    f = qemu_fdopen(fd, "rb");
+    if (f == NULL) {
+        error_setg_errno(errp, errno, "failed to create QEMUFile from source pipe");
+        return;
+    }
+
+    //ret = qemu_load_device_state(f);
+    ret = qemu_loadvm_state(f);
+    if (ret < 0) {
+        fprintf(stderr, "load of migration failed\n");
+        exit(0);
+    }
+    qemu_announce_self();
+    DPRINTF("successfully loaded vm state\n");
+
+    bdrv_clear_incoming_migration_all();
+    /* Make sure all file formats flush their mutable metadata */
+    bdrv_invalidate_cache_all();
+
+    if (autostart) {
+        vm_start();
+    } else {
+        runstate_set(RUN_STATE_PAUSED);
+    }
+}
+
 static void process_incoming_migration_co(void *opaque)
 {
     QEMUFile *f = opaque;
@@ -407,6 +451,16 @@ void migrate_del_blocker(Error *reason)
     migration_blockers = g_slist_remove(migration_blockers, reason);
 }
 
+static void print_time(struct timeval t1, struct timeval t2)
+{
+    uint64_t usec;
+
+    usec = (t2.tv_sec - t1.tv_sec) * 1000 * 1000;
+    usec += (t2.tv_usec - t1.tv_usec);
+
+    g_print("time elapsed: %f", (float)usec / 1000 / 1000);
+}
+
 void qmp_migrate(const char *uri, bool has_blk, bool blk,
                  bool has_inc, bool inc, bool has_detach, bool detach,
                  Error **errp)
@@ -415,6 +469,9 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
     MigrationState *s = migrate_get_current();
     MigrationParams params;
     const char *p;
+    struct timeval t1, t2;
+
+    gettimeofday(&t1, NULL);
 
     params.blk = blk;
     params.shared = inc;
@@ -454,6 +511,58 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
         migrate_fd_error(s);
         error_propagate(errp, local_err);
         return;
+    }
+
+    gettimeofday(&t2, NULL);
+    print_time(t1, t2);
+}
+
+void qmp_migrate_local(const char *path, Error **errp)
+{
+    QEMUFile *f;
+    int saved_vm_running;
+    int fd;
+    int ret;
+    struct timeval t1, t2;
+
+    gettimeofday(&t1, NULL);
+
+    saved_vm_running = runstate_is_running();
+    vm_stop(RUN_STATE_SAVE_VM);
+
+    fd = qemu_open(path, O_WRONLY);
+    if (fd == -1) {
+        error_setg_errno(errp, errno, "qemu_open() failed");
+        goto out_fail;
+    }
+    vmsplice_ram_out(fd, errp);
+    if (error_is_set(errp)) {
+        goto out_fail;
+    }
+
+    /* for non-splice stuff */
+    f = qemu_fdopen(fd, "wb");
+    if (!f) {
+        error_set(errp, QERR_OPEN_FILE_FAILED, path);
+        goto out_fail;
+    }
+    ret = qemu_save_device_state(f);
+    //ret = qemu_savevm_state(f);
+    qemu_fclose(f);
+    if (ret < 0) {
+        error_setg(errp, "migration failed");
+        goto out_fail;
+    }
+
+    gettimeofday(&t2, NULL);
+
+    print_time(t1, t2);
+
+    return;
+
+out_fail:
+    if (saved_vm_running) {
+        vm_start();
     }
 }
 
@@ -571,7 +680,7 @@ static int buffered_put_buffer(void *opaque, const uint8_t *buf,
     }
 
     if (size > (s->buffer_capacity - s->buffer_size)) {
-        DPRINTF("increasing buffer capacity from %zu by %zu\n",
+        DPRINTF("increasing buffer capacity from %zu by %d\n",
                 s->buffer_capacity, size + 1024);
 
         s->buffer_capacity += size + 1024;

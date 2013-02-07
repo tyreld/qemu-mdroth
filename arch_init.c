@@ -50,6 +50,8 @@
 #include "trace.h"
 #include "exec/cpu-all.h"
 
+//#define DEBUG_ARCH_INIT
+
 #ifdef DEBUG_ARCH_INIT
 #define DPRINTF(fmt, ...) \
     do { fprintf(stdout, "arch_init: " fmt, ## __VA_ARGS__); } while (0)
@@ -417,6 +419,104 @@ static void migration_bitmap_sync(void)
         start_time = end_time;
         num_dirty_pages_period = 0;
     }
+}
+
+#include "qapi/error.h"
+
+typedef enum {
+    VM_SPLICE_DIRECTION_IN = 0,
+    VM_SPLICE_DIRECTION_OUT
+} VMSpliceDirection;
+
+typedef struct VMSpliceHeader {
+    uint64_t total_ram;
+} VMSpliceHeader;
+
+static void vmsplice_header_out(int fd, VMSpliceHeader *hdr, Error **errp)
+{
+    /* write out ramblock idstr's and whatnot, various other compatibility
+     * hooks
+     */
+}
+
+static void vmsplice_header_in(int fd, VMSpliceHeader *hdr, Error **errp)
+{
+}
+
+static void vmsplice_header_check(VMSpliceHeader *hdr, Error **errp)
+{
+}
+
+#define VM_SPLICE_IOV_LEN_MAX 1<<30
+
+static void vmsplice_ram(int fd, VMSpliceDirection direction, Error **errp)
+{
+    RAMBlock *block;
+
+    if (direction == VM_SPLICE_DIRECTION_IN) {
+        //check fd is read-side of a pipe
+    } else {
+        //check fd is write-side of a pipe
+    }
+
+    qemu_mutex_lock_ramlist();
+    QTAILQ_FOREACH(block, &ram_list.blocks, next) {
+        MemoryRegion *mr = block->mr;
+        uint8_t *ram_ptr = memory_region_get_ram_ptr(mr); 
+        ram_addr_t ram_len = block->length;
+        ram_addr_t ram_offset = 0;
+        int flags = (direction == VM_SPLICE_DIRECTION_OUT) ? SPLICE_F_GIFT : 0;
+        //int flags = 0;
+
+        DPRINTF("vmsplicing block: %s\n", block->idstr);
+
+        while (ram_offset < ram_len) {
+            struct iovec iov = {
+                .iov_base = ram_ptr + ram_offset,
+                .iov_len = MIN(ram_len - ram_offset, VM_SPLICE_IOV_LEN_MAX),
+            };
+            //ssize_t ret = vmsplice(fd, &iov, 1, SPLICE_F_GIFT | SPLICE_F_NONBLOCK);
+            ssize_t ret = vmsplice(fd, &iov, 1, flags);
+            if (ret == -1) {
+                if (errno != EAGAIN && errno != EINTR) {
+                    error_setg_errno(errp, errno, "vmsplice() error");
+                    goto out;
+                }
+            } else {
+#ifdef DEBUG_ARCH_INIT
+                if (direction == VM_SPLICE_DIRECTION_IN && ret == 0) {
+                    usleep(1000000);
+                    DPRINTF("got a zero read\n");
+                }
+                if (ret < 0) {
+                    usleep(1000000);
+                    DPRINTF("got a < -1 read\n");
+                }
+#endif
+                ram_offset += ret;
+            }
+            DPRINTF("block: %s, ram_offset: %lu, ret: %zu\n", block->idstr, ram_offset, ret);
+        }
+        if (direction == VM_SPLICE_DIRECTION_OUT) {
+            //munmap(memory_region_get_ram_ptr(mr), block->length);
+        }
+    }
+
+out:
+    qemu_mutex_unlock_ramlist();
+}
+
+void vmsplice_ram_out(int fd, Error **errp) 
+{
+    vmsplice_header_out(fd, NULL, errp);
+    vmsplice_ram(fd, VM_SPLICE_DIRECTION_OUT, errp);
+}
+
+void vmsplice_ram_in(int fd, Error **errp)
+{
+    vmsplice_header_in(fd, NULL, errp);
+    vmsplice_header_check(NULL, errp);
+    vmsplice_ram(fd, VM_SPLICE_DIRECTION_IN, errp);
 }
 
 /*

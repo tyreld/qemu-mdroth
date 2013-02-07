@@ -178,6 +178,7 @@ tools-obj-$(CONFIG_POSIX) += compatfd.o
 qemu-img$(EXESUF): qemu-img.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 qemu-nbd$(EXESUF): qemu-nbd.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 qemu-io$(EXESUF): qemu-io.o cmd.o $(tools-obj-y) $(block-obj-y) libqemustub.a
+qemu-vmsplice$(EXESUF): qemu-vmsplice.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 
 qemu-bridge-helper$(EXESUF): qemu-bridge-helper.o
 

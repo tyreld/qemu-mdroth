@@ -2775,6 +2775,15 @@ STEXI
 Prepare for incoming migration, listen on @var{port}.
 ETEXI
 
+DEF("incoming-local", HAS_ARG, QEMU_OPTION_incoming_local, \
+    "-incoming-local p     prepare for incoming local migration, listen on named pipe p\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -incoming-local @var{port}
+@findex -incoming-local
+Prepare for incoming local migration, listen on @var{pipe}.
+ETEXI
+
 DEF("nodefaults", 0, QEMU_OPTION_nodefaults, \
     "-nodefaults     don't create default devices\n", QEMU_ARCH_ALL)
 STEXI

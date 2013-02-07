@@ -61,6 +61,8 @@ void process_incoming_migration(QEMUFile *f);
 
 void qemu_start_incoming_migration(const char *uri, Error **errp);
 
+void qemu_start_incoming_local_migration(const char *path, Error **errp);
+
 uint64_t migrate_max_downtime(void);
 
 void do_info_migrate_print(Monitor *mon, const QObject *data);
@@ -135,4 +137,6 @@ int migrate_use_xbzrle(void);
 int64_t migrate_xbzrle_cache_size(void);
 
 int64_t xbzrle_cache_resize(int64_t new_size);
+void vmsplice_ram_out(int fd, Error **errp);
+void vmsplice_ram_in(int fd, Error **errp);
 #endif

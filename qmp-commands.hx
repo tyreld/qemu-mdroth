@@ -466,6 +466,20 @@ Note: inject-nmi fails when the guest doesn't support injecting.
 EQMP
 
     {
+        .name       = "migrate-local",
+        .args_type  = "path:F",
+        .mhandler.cmd_new = qmp_marshal_input_migrate_local,
+    },
+
+SQMP
+migrate-local
+-------
+
+Blah.
+
+EQMP
+
+    {
         .name       = "xen-save-devices-state",
         .args_type  = "filename:F",
     .mhandler.cmd_new = qmp_marshal_input_xen_save_devices_state,

@@ -233,6 +233,7 @@ int boot_menu;
 uint8_t *boot_splash_filedata;
 int boot_splash_filedata_size;
 uint8_t qemu_extra_params_fw[2];
+const char *incoming_local;
 
 typedef struct FWBootEntry FWBootEntry;
 
@@ -3406,6 +3407,10 @@ int main(int argc, char **argv, char **envp)
                 incoming = optarg;
                 runstate_set(RUN_STATE_INMIGRATE);
                 break;
+            case QEMU_OPTION_incoming_local:
+                incoming_local = optarg;
+                runstate_set(RUN_STATE_INMIGRATE);
+                break;
             case QEMU_OPTION_nodefaults:
                 default_serial = 0;
                 default_parallel = 0;
@@ -4004,6 +4009,14 @@ int main(int argc, char **argv, char **envp)
         qemu_start_incoming_migration(incoming, &local_err);
         if (local_err) {
             fprintf(stderr, "-incoming %s: %s\n", incoming, error_get_pretty(local_err));
+            error_free(local_err);
+            exit(1);
+        }
+    } else if (incoming_local) {
+        Error *local_err = NULL;
+        qemu_start_incoming_local_migration(incoming_local, &local_err);
+        if (local_err) {
+            fprintf(stderr, "-incoming-local %s: %s\n", incoming_local, error_get_pretty(local_err));
             error_free(local_err);
             exit(1);
         }

@@ -1778,7 +1778,7 @@ out:
     return ret;
 }
 
-static int qemu_save_device_state(QEMUFile *f)
+int qemu_save_device_state(QEMUFile *f)
 {
     SaveStateEntry *se;
 
@@ -2242,8 +2242,7 @@ int load_vmstate(const char *name)
     if (ret < 0) {
         return ret;
     } else if (sn.vm_state_size == 0) {
-        error_report("This is a disk-only snapshot. Revert to it offline "
-            "using qemu-img.");
+        error_report("This is a disk-only snapshot. Revert to it offline " "using qemu-img.");
         return -EINVAL;
     }
 

@@ -2219,6 +2219,12 @@
 { 'command': 'xen-save-devices-state', 'data': {'filename': 'str'} }
 
 ##
+# @migrate-local
+##
+{ 'command': 'migrate-local',
+  'data': { 'path': 'str' } }
+
+##
 # @xen-set-global-dirty-log
 #
 # Enable or disable the global dirty log mode.
