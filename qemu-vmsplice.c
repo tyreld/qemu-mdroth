@@ -137,8 +137,8 @@ static void do_out_vmsplice(int fd_pipe[2], int fd, void *ptr, size_t len, bool 
     iov[0].iov_len = MIN(len, 1<<30); 
     while (count < len) {
         /* no effect ??? */
-        ret = vmsplice(fd_pipe[1], iov, 1, SPLICE_F_GIFT);
-        //ret = vmsplice(fd_pipe[1], iov, 1, 0);
+        //ret = vmsplice(fd_pipe[1], iov, 1, SPLICE_F_GIFT);
+        ret = vmsplice(fd_pipe[1], iov, 1, 0);
         if (ret == -1) {
             if (errno == EAGAIN) {
                 g_printerr("eagain\n");
@@ -393,7 +393,7 @@ static void do_server(const char *sock_path, size_t buf_size, int inherited_pipe
     close(fd_sock);
 }
 
-//#define PIPESZ 1048576
+#define PIPESZ 1048576
 //#define PIPESZ 16384
 //#define PIPESZ (64 << 10)
 
