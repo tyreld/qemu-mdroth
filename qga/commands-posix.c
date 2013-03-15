@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include "qga/guest-agent-core.h"
+#include "qga/guest-file-command-state.h"
 #include "qga-qmp-commands.h"
 #include "qapi/qmp/qerror.h"
 #include "qemu/queue.h"
@@ -194,49 +195,6 @@ void qmp_guest_set_time(int64_t time_ns, Error **errp)
     }
 }
 
-typedef struct GuestFileHandle {
-    uint64_t id;
-    FILE *fh;
-    QTAILQ_ENTRY(GuestFileHandle) next;
-} GuestFileHandle;
-
-static struct {
-    QTAILQ_HEAD(, GuestFileHandle) filehandles;
-} guest_file_state;
-
-static int64_t guest_file_handle_add(FILE *fh, Error **errp)
-{
-    GuestFileHandle *gfh;
-    int64_t handle;
-
-    handle = ga_get_fd_handle(ga_state, errp);
-    if (error_is_set(errp)) {
-        return 0;
-    }
-
-    gfh = g_malloc0(sizeof(GuestFileHandle));
-    gfh->id = handle;
-    gfh->fh = fh;
-    QTAILQ_INSERT_TAIL(&guest_file_state.filehandles, gfh, next);
-
-    return handle;
-}
-
-static GuestFileHandle *guest_file_handle_find(int64_t id, Error **err)
-{
-    GuestFileHandle *gfh;
-
-    QTAILQ_FOREACH(gfh, &guest_file_state.filehandles, next)
-    {
-        if (gfh->id == id) {
-            return gfh;
-        }
-    }
-
-    error_setg(err, "handle '%" PRId64 "' has not been found", id);
-    return NULL;
-}
-
 int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
 {
     FILE *fh;
@@ -279,34 +237,32 @@ int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, E
 
 void qmp_guest_file_close(int64_t handle, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    FILE *fh = guest_file_handle_find(handle, err);
     int ret;
 
     slog("guest-file-close called, handle: %ld", handle);
-    if (!gfh) {
+    if (error_is_set(err)) {
         return;
     }
 
-    ret = fclose(gfh->fh);
+    ret = fclose(fh);
     if (ret == EOF) {
         error_setg_errno(err, errno, "failed to close handle");
         return;
     }
 
-    QTAILQ_REMOVE(&guest_file_state.filehandles, gfh, next);
-    g_free(gfh);
+    guest_file_handle_remove(handle);
 }
 
 struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
                                           int64_t count, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    FILE *fh = guest_file_handle_find(handle, err);
     GuestFileRead *read_data = NULL;
     guchar *buf;
-    FILE *fh;
     size_t read_count;
 
-    if (!gfh) {
+    if (error_is_set(err)) {
         return NULL;
     }
 
@@ -318,7 +274,6 @@ struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
         return NULL;
     }
 
-    fh = gfh->fh;
     buf = g_malloc0(count+1);
     read_count = fread(buf, 1, count, fh);
     if (ferror(fh)) {
@@ -346,14 +301,12 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
     guchar *buf;
     gsize buf_len;
     int write_count;
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
-    FILE *fh;
+    FILE *fh = guest_file_handle_find(handle, err);
 
-    if (!gfh) {
+    if (error_is_set(err)) {
         return NULL;
     }
 
-    fh = gfh->fh;
     buf = g_base64_decode(buf_b64, &buf_len);
 
     if (!has_count) {
@@ -383,16 +336,14 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
 struct GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
                                           int64_t whence, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
     GuestFileSeek *seek_data = NULL;
-    FILE *fh;
+    FILE *fh = guest_file_handle_find(handle, err);
     int ret;
 
-    if (!gfh) {
+    if (error_is_set(err)) {
         return NULL;
     }
 
-    fh = gfh->fh;
     ret = fseek(fh, offset, whence);
     if (ret == -1) {
         error_setg_errno(err, errno, "failed to seek file");
@@ -408,24 +359,17 @@ struct GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
 
 void qmp_guest_file_flush(int64_t handle, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
-    FILE *fh;
+    FILE *fh = guest_file_handle_find(handle, err);
     int ret;
 
-    if (!gfh) {
+    if (error_is_set(err)) {
         return;
     }
 
-    fh = gfh->fh;
     ret = fflush(fh);
     if (ret == EOF) {
         error_setg_errno(err, errno, "failed to flush file");
     }
-}
-
-static void guest_file_init(void)
-{
-    QTAILQ_INIT(&guest_file_state.filehandles);
 }
 
 /* linux-specific implementations. avoid this if at all possible. */
