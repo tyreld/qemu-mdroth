@@ -108,43 +108,6 @@ void qmp_guest_shutdown(bool has_mode, const char *mode, Error **err)
     }
 }
 
-int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-    return 0;
-}
-
-void qmp_guest_file_close(int64_t handle, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-}
-
-GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
-                                   int64_t count, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-    return 0;
-}
-
-GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
-                                     bool has_count, int64_t count, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-    return 0;
-}
-
-GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
-                                   int64_t whence, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-    return 0;
-}
-
-void qmp_guest_file_flush(int64_t handle, Error **err)
-{
-    error_set(err, QERR_UNSUPPORTED);
-}
-
 /*
  * Return status of freeze/thaw
  */
@@ -301,7 +264,343 @@ int64_t qmp_guest_set_vcpus(GuestLogicalProcessorList *vcpus, Error **errp)
     return -1;
 }
 
+typedef struct GuestFileHandle {
+    uint64_t id;
+    //FILE *fh;
+    GIOChannel *chan;
+    QTAILQ_ENTRY(GuestFileHandle) next;
+} GuestFileHandle;
+
+static struct {
+    QTAILQ_HEAD(, GuestFileHandle) filehandles;
+} guest_file_state;
+
+static uint64_t guest_file_handle_add(GIOChannel *chan, Error **errp)
+{
+    GuestFileHandle *gfh;
+    uint64_t handle;
+
+    handle = ga_get_fd_handle(ga_state, errp);
+    if (error_is_set(errp)) {
+        return 0;
+    }
+
+    gfh = g_malloc0(sizeof(GuestFileHandle));
+    gfh->id = handle;
+    //gfh->fh = fh;
+    gfh->chan = chan;
+    QTAILQ_INSERT_TAIL(&guest_file_state.filehandles, gfh, next);
+
+    return handle;
+}
+
+static GuestFileHandle *guest_file_handle_find(int64_t id, Error **err)
+{
+    GuestFileHandle *gfh;
+
+    QTAILQ_FOREACH(gfh, &guest_file_state.filehandles, next)
+    {
+        if (gfh->id == id) {
+            return gfh;
+        }
+    }
+
+    error_setg(err, "handle '%" PRId64 "' has not been found", id);
+    return NULL;
+}
+
+int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
+{
+    GIOChannel *chan;
+    GError *gerr = NULL;
+#ifndef _WIN32
+    //int fd;
+    //int64_t ret = -1;
+#endif
+    int64_t handle;
+
+    if (!has_mode) {
+        mode = "r";
+    }
+    slog("guest-file-open called, filepath: %s, mode: %s", path, mode);
+    //fh = fopen(path, mode);
+    chan = g_io_channel_new_file(path, mode, &gerr);
+    if (gerr) {
+        error_setg_errno(err, errno, "failed to open file '%s' (mode: '%s')",
+                         path, mode);
+        return -1;
+    }
+
+#if 0
+#ifndef _WIN32
+    /* set fd non-blocking to avoid common use cases (like reading from a
+     * named pipe) from hanging the agent
+     */
+    fd = fileno(fh);
+    ret = fcntl(fd, F_GETFL);
+    ret = fcntl(fd, F_SETFL, ret | O_NONBLOCK);
+    if (ret == -1) {
+        error_setg_errno(err, errno, "failed to make file '%s' non-blocking",
+                         path);
+        fclose(fh);
+        return -1;
+    }
+#endif
+#endif
+
+    g_io_channel_set_flags(chan, G_IO_FLAG_NONBLOCK, &gerr);
+    if (gerr) {
+        error_setg_errno(err, errno, "failed to make file '%s' non-blocking",
+                         path);
+    }
+
+    //handle = guest_file_handle_add(fh, err);
+    handle = guest_file_handle_add(chan, err);
+    if (error_is_set(err)) {
+        g_io_channel_shutdown(chan, true, NULL);
+        return -1;
+    }
+
+    slog("guest-file-open, handle: %d", handle);
+    return handle;
+}
+
+void qmp_guest_file_close(int64_t handle, Error **err)
+{
+    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    //int ret;
+
+    slog("guest-file-close called, handle: %ld", handle);
+    if (!gfh) {
+        return;
+    }
+
+#if 0
+    ret = fclose(gfh->fh);
+    if (ret == EOF) {
+        error_setg_errno(err, errno, "failed to close handle");
+        return;
+    }
+#endif
+
+    g_io_channel_shutdown(gfh->chan, true, NULL);
+
+    QTAILQ_REMOVE(&guest_file_state.filehandles, gfh, next);
+    g_free(gfh);
+}
+
+struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
+                                          int64_t count, Error **err)
+{
+    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    GuestFileRead *read_data = NULL;
+    gchar *buf;
+    //FILE *fh;
+    GIOChannel *chan;
+    GError *gerr = NULL;
+    GIOStatus status;
+    gsize read_count = 0;
+
+    if (!gfh) {
+        return NULL;
+    }
+
+    if (!has_count) {
+        count = QGA_READ_COUNT_DEFAULT;
+    } else if (count < 0) {
+        error_setg(err, "value '%" PRId64 "' is invalid for argument count",
+                   count);
+        return NULL;
+    }
+
+    //fh = gfh->fh;
+    chan = gfh->chan;
+    buf = g_malloc0(count+1);
+    //read_count = fread(buf, 1, count, fh);
+    status = g_io_channel_read_chars(chan, buf, count, &read_count, &gerr);
+    if (gerr) {
+        error_setg(err, "failed to read file: %s", gerr->message);
+        g_error_free(gerr);
+        return NULL;
+    }
+
+    if (status == G_IO_STATUS_ERROR) {
+        error_setg(err, "failed to read file");
+        return NULL;
+    } else {
+        read_data = g_malloc0(sizeof(GuestFileRead));
+        if (status == G_IO_STATUS_EOF) {
+            read_data->eof = true;
+        } else if (status == G_IO_STATUS_NORMAL) {
+            buf[read_count] = 0;
+            read_data->count = read_count;
+            if (read_count) {
+                read_data->buf_b64 = g_base64_encode((guchar *)buf, read_count);
+            }
+        }
+    }
+
+#if 0
+    if (ferror(fh)) {
+        error_setg_errno(err, errno, "failed to read file");
+        slog("guest-file-read failed, handle: %ld", handle);
+    } else {
+        buf[read_count] = 0;
+        read_data = g_malloc0(sizeof(GuestFileRead));
+        read_data->count = read_count;
+        read_data->eof = feof(fh);
+        if (read_count) {
+            read_data->buf_b64 = g_base64_encode(buf, read_count);
+        }
+    }
+#endif
+    g_free(buf);
+    //clearerr(fh);
+
+    return read_data;
+}
+
+GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
+                                     bool has_count, int64_t count, Error **err)
+{
+    GuestFileWrite *write_data = NULL;
+    gchar *buf;
+    gsize buf_len;
+    gsize write_count = 0;
+    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    //FILE *fh;
+    GError *gerr = NULL;
+    GIOStatus status;
+
+    if (!gfh) {
+        return NULL;
+    }
+
+    //fh = gfh->fh;
+    buf = (gchar *)g_base64_decode(buf_b64, &buf_len);
+
+    if (!has_count) {
+        count = buf_len;
+    } else if (count < 0 || count > buf_len) {
+        error_setg(err, "value '%" PRId64 "' is invalid for argument count",
+                   count);
+        g_free(buf);
+        return NULL;
+    }
+
+    status = g_io_channel_write_chars(gfh->chan, buf, count, &write_count, &gerr);
+    if (gerr) {
+        error_setg(err, "failed to write to file: %s", gerr->message); 
+        slog("guest-file-write failed, handle: %ld", handle);
+        return NULL;
+    }
+
+    if (status == G_IO_STATUS_ERROR) {
+    } else {
+        write_data = g_malloc0(sizeof(GuestFileWrite));
+        if (status == G_IO_STATUS_EOF) {
+            write_data->eof = true;
+        } else if (status == G_IO_STATUS_NORMAL) {
+            write_data->count = write_count;
+        }
+    }
+
+#if 0
+    write_count = fwrite(buf, 1, count, fh);
+    if (ferror(fh)) {
+        error_setg_errno(err, errno, "failed to write to file");
+        slog("guest-file-write failed, handle: %ld", handle);
+    } else {
+        write_data = g_malloc0(sizeof(GuestFileWrite));
+        write_data->count = write_count;
+        write_data->eof = feof(fh);
+    }
+#endif
+    g_free(buf);
+    //clearerr(fh);
+
+    return write_data;
+}
+
+struct GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
+                                          int64_t whence, Error **err)
+{
+    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    GuestFileSeek *seek_data = NULL;
+    //FILE *fh;
+    GIOChannel *chan;
+    GIOStatus status;
+    GError *gerr = NULL;
+    //int ret;
+
+    if (!gfh) {
+        return NULL;
+    }
+
+    chan = gfh->chan;
+    status = g_io_channel_seek_position(chan, offset, whence, &gerr);
+    if (gerr) {
+        error_setg(err, "failed to seek file: %s", gerr->message);
+        return NULL;
+    } else if (status == G_IO_STATUS_ERROR) {
+        error_setg(err, "failed to seek file");
+        return NULL;
+    }
+
+    seek_data = g_malloc0(sizeof(GuestFileRead));
+    /* TODO: where is ftell() for glib? fix this!!!! */
+    //seek_data->position = ftell(fh);
+    seek_data->position = 0;
+    /* TODO: how the hell do we get eof??? set false for now,
+     * they'll pick it up on a subsequent read at least */
+    seek_data->eof = 0;
+    //seek_data->eof = feof(fh);
+
+
+#if 0
+    fh = gfh->fh;
+    ret = fseek(fh, offset, whence);
+    if (ret == -1) {
+        error_setg_errno(err, errno, "failed to seek file");
+    } else {
+    }
+    clearerr(fh);
+#endif
+
+    return seek_data;
+}
+
+void qmp_guest_file_flush(int64_t handle, Error **err)
+{
+    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
+    //FILE *fh;
+    GIOStatus status;
+    GError *gerr = NULL;
+    //int ret;
+
+    if (!gfh) {
+        return;
+    }
+
+    status = g_io_channel_flush(gfh->chan, &gerr);
+    if (gerr) {
+        error_setg(err, "failed to flush file: %s", gerr->message);
+        g_error_free(gerr);
+    } else if (status == G_IO_STATUS_ERROR) {
+        error_setg(err, "failed to flush file");
+    }
+
+#if 0
+    fh = gfh->fh;
+    ret = fflush(fh);
+    if (ret == EOF) {
+        error_setg_errno(err, errno, "failed to flush file");
+    }
+#endif
+}
+
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init(GAState *s, GACommandState *cs)
 {
+    ga_command_state_add(cs, guest_file_init, NULL);
 }
