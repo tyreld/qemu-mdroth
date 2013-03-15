@@ -1105,6 +1105,7 @@ int main(int argc, char **argv)
     }
     s->command_state = ga_command_state_new();
     ga_command_state_init(s, s->command_state);
+    ga_command_state_init_common(s, s->command_state);
     ga_command_state_init_all(s->command_state);
     json_message_parser_init(&s->parser, process_event);
     ga_state = s;

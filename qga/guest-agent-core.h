@@ -1,3 +1,5 @@
+#ifndef GUEST_AGENT_CORE_H
+#define GUEST_AGENT_CORE_H
 /*
  * QEMU Guest Agent core declarations
  *
@@ -14,12 +16,14 @@
 #include "qemu-common.h"
 
 #define QGA_READ_COUNT_DEFAULT 4096
+#define QGA_EXEC_BUFFER_MAX 1 << 20
 
 typedef struct GAState GAState;
 typedef struct GACommandState GACommandState;
 extern GAState *ga_state;
 
 void ga_command_state_init(GAState *s, GACommandState *cs);
+void ga_command_state_init_common(GAState *s, GACommandState *cs);
 void ga_command_state_add(GACommandState *cs,
                           void (*init)(void),
                           void (*cleanup)(void));
@@ -39,4 +43,6 @@ int64_t ga_get_fd_handle(GAState *s, Error **errp);
 
 #ifndef _WIN32
 void reopen_fd_to_null(int fd);
+#endif
+
 #endif

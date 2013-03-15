@@ -626,3 +626,87 @@
 { 'command': 'guest-set-vcpus',
   'data':    {'vcpus': ['GuestLogicalProcessor'] },
   'returns': 'int' }
+
+# GuestExecStatus
+#
+# Since: 1.5
+##
+{ 'type': 'GuestExecStatus',
+  'data': { 'handle': 'int', 'exited': 'bool', 'exit-code': 'int' } }
+
+##
+# GuestExecResponse
+#
+# Since: 1.5
+##
+{ 'type': 'GuestExecResponse',
+  'data': { 'status': 'GuestExecStatus',
+            '*stdout-buffer': 'str',
+            '*stderr-buffer': 'str' } }
+
+##
+# GuestExecAsyncResponse
+#
+# Since: 1.5
+##
+{ 'type': 'GuestExecAsyncResponse',
+  'data': { 'status': 'GuestExecStatus',
+            '*handle_stdin': 'int', '*handle_stdout': 'int',
+            '*handle_stderr': 'int' } }
+
+##
+# @guest-exec-status
+#
+# Check status of process associated with PID retrieved via guest-exec.
+# Reap the process and associated metadata if it has exited.
+#
+# @pid: pid returned from guest-exec
+# @wait: #optional whether to wait for completion or simply poll once.
+# Waiting is disallowed if a stdin/stdout/stderr handle was supplied
+# to guest-exec
+#
+# Returns: GuestExecStatus on success
+#
+# Since: 1.5
+##
+{ 'command': 'guest-exec-status',
+  'data':    { 'pid': 'int', '*wait': 'bool' },
+  'returns': 'GuestExecStatus' }
+
+##
+# @guest-exec:
+#
+# Execute a command in the guest
+#
+# If a pipe is associated with the resulting process, the
+# read/write/write sides of the process' stdin/stdout/stderr will
+# be transferred automatically, so no need to close them from the
+# client. If no handle is passed in for stdin/stdout/stderr, they
+# will be closed before executing the command.
+#
+# @path: path or executable name to execute
+# @params: #optional parameter list to pass to executable
+# @handle_stdin: #optional handle to associate with process' stdin.
+# @handle_stdout: #optional handle to associate with process' stdout
+# @handle_stderr: #optional handle to associate with process' stderr
+# @detach: #optional whether to detach the process or execute it
+# synchronously. If synchronous, passing of stdin/stdout/stderr handles
+# will be disallowed, since process can block on closing them and cause
+# a deadlock in the guest agent.
+#
+# Returns: GuestExecResponse on success.
+#
+# Since: 1.5
+##
+{ 'command': 'guest-exec',
+  'data':    { 'cmdline': 'str' },
+  'returns': 'GuestExecResponse' }
+
+{ 'command': 'guest-exec-async',
+  'data':    { 'cmdline': 'str', '*interactive': 'bool' },
+  'returns': 'GuestExecAsyncResponse' }
+
+#
+#  'data':    { 'path': 'str', '*params': ['GuestExecParam'],
+#               '*detach': 'bool' },
+#  'returns': 'GuestExecStatus' }
