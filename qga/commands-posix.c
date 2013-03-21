@@ -276,7 +276,7 @@ struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
 
     buf = g_malloc0(count+1);
     read_count = fread(buf, 1, count, fh);
-    if (ferror(fh)) {
+    if (ferror(fh) && errno != EAGAIN) {
         error_setg_errno(err, errno, "failed to read file");
         slog("guest-file-read failed, handle: %ld", handle);
     } else {
