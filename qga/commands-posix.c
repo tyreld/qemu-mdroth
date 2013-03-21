@@ -195,6 +195,27 @@ void qmp_guest_set_time(int64_t time_ns, Error **errp)
     }
 }
 
+int64_t guest_file_handle_add_fd(int fd, const char *mode, Error **errp)
+{
+    FILE *fh;
+    int ret;
+
+    ret = fcntl(fd, F_GETFL);
+    ret = fcntl(fd, F_SETFL, ret | O_NONBLOCK);
+    if (ret == -1) {
+        error_setg_errno(errp, errno, "failed to make file non-blocking");
+        return -1;
+    }
+
+    fh = fdopen(fd, mode);
+    if (!fh) {
+        error_setg_errno(errp, errno, "failed to create file handle");
+        return -1;
+    }
+
+    return guest_file_handle_add(fh, errp);
+}
+
 int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
 {
     FILE *fh;
