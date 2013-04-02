@@ -1,0 +1,11 @@
+# hw/dataplane/vring.c
+vring_setup
+
+# hw/dataplane/virtio-net.c
+virtio_net_data_plane_start
+virtio_net_data_plane_stop
+
+virtio_net_data_plane_tx_flush
+virtio_net_data_plane_tx_write
+virtio_net_data_plane_tx_write_complete
+virtio_net_data_plane_tx_flush_complete

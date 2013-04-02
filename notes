@@ -1,0 +1,323 @@
+# setting host notifier causes DRIVER_CONFIG_S_OK to never be set:
+    if (s->vdev->binding->set_host_notifier(s->vdev->binding_opaque,
+                                            1, true) != 0) {
+# Fixed, mixed up the NetClientStates
+
+# test command
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,format=raw,file=../dummy.img -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=on -m 1G -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,mac=52:54:00:12:34:00 -netdev tap,id=blah,script=/etc/qemu-ifup -kernel ../qemu-test-images/x86-qemu-jeos/vmlinuz -initrd ../qemu-test-images/x86-qemu-jeos/initramfs-ping-test.img -append console=ttyS0 -nographic 2>log 
+
+# test command full
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,format=raw,file=~/vm/ubuntu12.04_64_test.qcow2 -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=on -m 1G -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,mac=52:54:00:12:34:00 -netdev tap,id=blah,script=/etc/qemu-ifup 2>log
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,format=raw,file=../dummy.im
+
+# test command current
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,format=raw,file=../dummy.img -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=off -m 1G -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,mac=52:54:00:12:34:00,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off -netdev tap,id=blah,script=/etc/qemu-ifup -kernel ../qemu-test-images/x86-qemu-jeos/vmlinuz -initrd ../qemu-test-images/x86-qemu-jeos/initramfs-ping-test.img -no-shutdown 2>log
+
+# test command full current
+#
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,file=/home/mdroth/vm/ubuntu12.04_64_test.qcow2 -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=off -m 1G -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,mac=52:54:00:12:34:00,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off -netdev tap,id=blah,script=/etc/qemu-ifup 2>log
+
+# no mrgrxbuf
+make && sudo x86_64-softmmu/qemu-system-x86_64 -enable-kvm -drive if=none,id=drive0,cache=none,aio=native,file=/home/mdroth/vm/ubuntu12.04_64_test.qcow2 -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=off -m 1G -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,mac=52:54:00:12:34:00,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,mrg_rxbuf=off -netdev tap,id=blah,script=/etc/qemu-ifup 2>log
+
+# setting ifconfig causes guest to spin in KVM_RUN
+# suspect that it's waiting for an irq... which virtqueue? ctrl seems
+
+First ioregion handled by registered ioport read/write handler initially (afterward?)
+
+Note seeing this handle after dataplane is started... need to handle pio to ioregion as well?
+How do we register a host notifier for this? We only have virtqueue notifers so far...
+blk dataplane doesn't seem to need this???
+
+OVERVIEW
+
+This code attempts to improve device emulation performance for virtio-net by
+offloading rx and tx handling to dedicated threads. We do this by making use
+of the same infrastructure as the recently upstreamed virtio-blk-dataplane
+code, which takes a similar approach to improving virtio-blk performance.
+
+Currently virtio-net is event-driven by guest interrupts/notifications, since
+polling for new data would block vcpu execution. To reduce the number of
+notifications, which also impede guest execution by forcing VMEXITs,
+virtio-net will disable notifications when it detects high traffic rates
+and handle processing in large batches. This works well for streaming
+workloads, and reasonably well for request/response workloads that don't
+generate enough traffic to trigger the batching behavior (and so are serviced
+immediately in response to notifications), but can lead to high request
+latencies for workloads where there are low->moderate amounts of concurrent
+RR connections, such as HTTP servers.
+
+It's been long-suspected (by Anthony :) that the optimal approach for improving
+performance in these situations is disabling notifications and polling for new
+work, but it's only recently that work such as virtio-blk-dataplane and other
+work around improving lock-granularity in QEMU has made this option viable (in
+userspace, at least, vhost-net uses separate threads as well, and could
+potentially benefit from the approach taken here, but an optimal userspace
+implementation for non-vhost users is a good starting point, and is beneficial
+from a maintainability and usability perspective).
+
+IMPLEMENTATION
+
+Currently the amount of time spent spinning is controlled by simple counter
+values. For our current default these are set to -1 (infinity), which makes
+these threads busy-wait for work. Ideally these would instead be controlled
+by a fine-grained, timeout-based value, or computed adaptively, but since
+all the workloads I've tried so far show that spinning results in the best
+performance, this should be a good indication of what we can hope to
+achieve by off-loading tx/rx to dedicated threads, and we can work on making
+things play more nicely from there.
+
+It should also be noted that the current code does not implement mrg_rxbuf,
+which provides a nice boost for streaming TCP workloads. This is a TODO.
+
+RX thread:
+
+ 1. epoll_wait() for EPOLL_IN events for data coming in for the guest on the
+    virtual NIC's tap device/fd.
+ 2. disable host notifications (we don't use these at all currently, since we
+    only care about ring events when we have data to deliver, and if we're
+    waiting for a ring event, it's because we've used all the available buffers
+    to deliver data to the guest and should be getting some back soon. So we
+    just busy-wait instead.)
+ 3. attempt to retrieve a buffer from the rx ring:
+    a. if we get one, attempt to read() the data into the buffer:
+       i. if we succeed, set sent=yes, goto 3.
+      ii. otherwise (EAGAIN), send the guest a notification if sent=yes, and:
+          - if we've spun more than RX_SPIN_MAX, goto to 1)
+          - otherwise, goto a.
+     b. if there aren't any available, it's because we've used them all to send
+        data to the guest and should be getting one shortly. goto 3)
+
+  tuneables (hard-coded constants at the moment)
+
+  RX_SPIN_MAX: controls the maximum number of times to spin on
+    read() == EAGAIN. If this is exceeded, we fall back to epoll_wait()'ing for
+    incoming data on the tap fd. RX_SPIN_MAX = -1/inf makes this thread
+    busy-wait continuously and results in the best performance. A value on the
+    order of 10000 (will vary based on cpu) or so keeps us spinning long enough
+    to stay active for streaming workloads and idle otherwise, and with some
+    tuning only leads to about a 10% reduction in performance from
+    RX_SPIN_MAX==-1. Why spinning on read() is so much faster than falling
+    back to epoll_wait() here is a bit of a mystery to me: apparently for many
+    workloads the latency involved tends to exceed the amount of time we
+    would've spent just busy-waiting.
+
+TX thread:
+
+ 1. epoll_wait() for host notifications
+ 2. disable host notifications
+ 3. attempt to retrieve a buffer from the tx ring:
+    a) if we get one, write() it out to the tap device, goto 3.
+    b) if we don't get one:
+       - if we're below TX_SPIN_MAX, goto 3.
+       - otherwise, re-enable host notifications, goto 1.
+
+  tuneables (hard-coded constants at the moment)
+
+  TX_SPIN_MAX: control the maximum number of times to spin attempting to
+    retrieve a buffer from the tx ring. TX_SPIN_MAX = -1/inf makes this thread
+    busy-wait continuously and results in the best performance. Something on
+    the order of 10000-100000 should provide a reasonable trade-off ~10% for
+    streaming workloads while allowing idling in low-traffic scenarios. TCP_RR
+    and TCP_CRR seem to take a good hit if this isn't set high enough.
+
+SETUP
+
+Machine: i5-3320M 2.60GHz, 16GB, guest->host networking via local bridge
+
+Invocation for upstream/vhost (specific options specified in data tables):
+
+x86_64-softmmu/qemu-system-x86_64 -enable-kvm -m 1G \
+ -drive if=none,id=drive0,file=/home/mdroth/vm/ubuntu12.04_64_test.qcow2 \
+ -device virtio-blk-pci,drive=drive0,scsi=off \
+ -device virtio-net-pci,id=net0,netdev=blah,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,mrg_rxbuf=on \
+ -netdev tap,id=blah,script=/etc/qemu-ifup,vhost=on
+
+Invocation for virtio-net-dataplane:
+
+x86_64-softmmu/qemu-system-x86_64 -enable-kvm -m 1G \
+ -drive if=none,id=drive0,file=/home/mdroth/vm/ubuntu12.04_64_test.qcow2 \
+ -device virtio-blk-pci,drive=drive0,scsi=off,x-data-plane=off \
+ -device virtio-net-pci,id=net0,x-data-plane=on,netdev=blah,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,mrg_rxbuf=off,event_idx=off \
+ -netdev tap,id=blah,script=/etc/qemu-ifup
+
+BENCHMARKS (preliminary data)
+
+uperf TCP_RR(n_concurrent) ("small packet performance"):
+
+            upstream      vhost    dp1    dp2    dp3
+.mrg_rxbuf       off         on    off    off    off
+.event_idx        on         on 
+.TX_SPIN_MAX                       inf  10000  10000
+.RX_SPIN_MAX                       inf    inf   1000
+.RX_NOTIFY_COALESCE_MAX             10     10     10
+
+TCP_RR(1)
+ (2*trans/s)   22104      33069  33710  30447  29735
+TCP_RR(10)
+ (2*trans/s)   37276      66071 138373  90788  95339
+TCP_RR(30)
+ (2*trans/s)  44-105k(1)  67711 139570 115841  94350
+TCP_RR(60)
+ (2*trans/s)  44-113k     87609 133740 127788  89920
+
+netperf/iperf:
+
+            upstream  upstream   vhost dp1(tx+rx spinning)
+.mrg_rxbuf       off        on      on                 off
+.event_idx        on        on      on                 off
+
+UDP_RR
+ (1k trans/s)     11        14      18                  24
+TCP_CRR
+ (trans/s)      4220      6444    9531               10500(2)
+TCP_RR
+ (trans/s)     10300     13430   17365               18120
+UDP_STREAM
+ (10^6bits/s)  20000     20000   27000               22000
+TCP_STREAM
+ (10^6bits/s)   5970      9320   15000                8900
+iperf g->h
+ (GB/s)         11.0        15      21                  16(3)
+iperf h->g
+ (GB/s)          9.3        11      23                  15
+
+NOTES
+
+1) In some cases upstream virtio-net started off strong with TCP_RR(30) with
+numbers similar to TCP_RR(60) before slowly degrading to 44k. This may the
+threshold where multi-threaded TCP_RR is not driving enough data to
+mitigate notification latency. Oddly, once we see this occur for TCP_RR(30),
+TCP_RR(60) degrades to about 44k as well, half of what we see in other runs.
+Rebooting the guest doesn't help, only restarting the QEMU process, at which
+point TCP_RR(60) performs well again. This is an odd state and probably worth
+investigating as it suggests a bug or corner case that's not accounted for
+upstream.
+
+2) This seems to require a high guest rx notification rate to maintain. If we
+only send the notifcation when reads/pops == EAGAIN we seem to introduce a
+processing delay on the guest side. TCP_RR seems to be affected in a similar
+way. We can still match vhost in these cases, but we're faster otherwise, so
+guest notification frequency might be a worthwhile tunable in addition to
+polling duration. (see: RX_NOTIFY_COALESCE_MAX)
+
+3) We are cpu bound with rx/tx spinning (2 core machine where the guest vcpu is
+contending), so these and other stream numbers might be higher with extra cores
+or heuristics to adaptively switch polling behavior on/off.
+
+Summary for rx/tx spinning:
+
+Faster than upstream in all metrics with mrg_rxbuf disabled, faster or equal in all metrics except
+TCP_STREAM when mrg_rxbuf is enabled for upstream. Faster than current best case (vhost+mrg_rxbuf)
+in TCP_RR, UDP_RR, and TCP_CRR, and slower in everything else (so generally worse for stream
+workloads, and better with latency. may do better if more cpu resources are available)
+
+Actually...guest takes up a lot of cpu when testing, so it's possible that in case where the
+RX thread gets scheduled on the same cpu as the spinning TX thread we get substantial performance
+degradation on RX side... but that doesn't explain what appears to be h->g packet loss... might
+explain other things though. Also, might explain might consolidating guest tx notifications might
+make the co-scheduling scenario more likely, since guest stays scheduled longer.
+
+Summary for tx spinning (event-driven rx):
+
+Basically, faster for tcp/udp stream workloads where rx usage is minimal. Anything involving
+substantial rx is extremely slow. Could be a result of my implementation. Some things to note:
+
+host->guest UDP_STREAM reports:
+Size    Size     Time         Okay Errors   Throughput
+bytes   bytes    secs            #      #   10^6bits/sec
+
+229376   65507   10.00      850104      0    44549.54 <- host reported
+229376           10.00      149253           7821.58  <- guest reported
+
+This suggests we're losing a lot of packets on the RX side of things. Could be related to other
+performance issues, all of which seem to involve RX in some way (g->h UDP_STREAM is consistent
+so tx seems solid). Might also explain extremely slow TCP_CRR (high-transmission rates for
+establishing connection?) But why does this seemingly only happen for event-driven, where we
+guest visible vring/notification behavior is roughly the same?
+wait for tap readability before re-looping instead of just 
+
+--
+iperf g->h uses slightly larger tcp window size than TCP_STREAM (23.5KB vs. 16KB/16KB). Not
+sure about iperf socket size. Possible explanation? RX is slow, so anything with more RX (like
+TCP ACKs) might be impacted. Speed dat ish up.
+
+TCP_CRR... connection/teardown for each request. Latency? Where? Must be RX...TX is spinning
+
+Could also be CPU contention...TX hogs one, guest/RX fight for the other? meh. plus RX is
+event-driven currently
+
+i7-3770s:
+            upstream  upstream   vhost dp(tx_spin) dp(tx_spin) dp(tx+rx_spin) dp(tx+rx_spin)
+.mrg_rxbuf       off        on      on         off         off            off            off
+.event_idx        on        on      on          on         off            off             on
+
+UDP_RR                           29200                                  28400
+TCP_CRR         9062             15341                                  14689          13178
+TCP_RR         21543             32181                                  30158          30309
+UDP_STREAM                       43000                                  35000
+TCP_STREAM     11599             25108                                  12163          10100
+iperf g->h      21.1              34.4                                   25.3           22.8
+iperf h->g      14.6              40.6                                   25.0           25.8
+
+1) On some runs the cpu utilization will quickly drop near to steady-state and we'll get low
+performance runs. On runs where this doesn't happen we see a marked improvement. Need to identify
+what state the threads are getting into during these runs, but a likely scenario seems to be
+that the rx thread is getting migrated to the same cpu as the spinning tx thread. This seemed
+to occur more often when changes were made to reduce guest tx notification rate, which would
+give the guest more cpu and make it more likely to push the rx thread to another cpu. Since
+we don't have a spinning rx thread in this case, we have extra cpu resources available, so
+the upper range suggests that tx+rx spinning would scale further which additional cpu resources
+
+
+ROUND 2
+
+(netperf client run on host)
+                                           vhost vhost   vnet
+RX_NOTIFY_COALESCE_MAX     10     0     0      x     x      x
+RX_SPIN_MAX                -1    -1    -1      x     x      x
+TX_SPIN_COUNT_MAX          -1    -1    -1      x     x      x
+mrg_rxbuf                 off   off    on     on   off     on
+ioventfd                  off   off   off     on    on     on
+---
+        TCP_RR          21973 23132 19378  13173  8225
+        UDP_RR          21397 25378 22001  14424  9000
+        TCP_STREAM      15759 16403 16539  19556 18706
+        TCP_MAERTS       6518  7851  9122  14065 11833
+        UDP_STREAM      20882 20682 17292  25851 22220
+        iperf h2g?       14.8  16.9  18.2   22.7  18.3
+        iperf g2h?       14.7  17.4  17.7   22.1  18.5
+amd
+        TCP_RR                27587 28493  25267        19888 
+        UDP_RR                30726 32882  27793        21335
+        TCP_STREAM            16014 12677  15126         8787
+        TCP_MAERTS             7859  8018  10121         8018
+        UDP_STREAM            13763 11426  13938         9421
+        iperf h2g              15.2  11.9   12.7          8.6
+        iperf g2h              12.3  12.3   12.9         10.7
+
+Why is rx vs. tx so much different with netperf than iperf? window size?
+
+Why does mrg_rxbuf HURT EVERY METRIC (except TCP_MAERTS)??
+Opposite for vhost........... nm... baseline numbers don't
+seem to be right. mrgrxbuf seems generally better
+
+Apparently tx is faster if we slow down the loop with crud? maybe not?
+tx is roughly the same as upsteam qemu
+
+qemu-devel virtio-net "credits" thread:
+
+netperf -H 192.168.122.1 -t UDP_STREAM -l 10 -- -m 1k -M 1k
+                 virtio-net virtio-net dataplane dataplane
+.ioeventfd               on        off      off?        on
+.mrg_rxbuf               on         on        on
+.event_idx               on         on       off
+m=1024
+g->h (kpps/s):          222        205       191       207
+                        214        209       190       197
+                        219        210       194       216
+amd
+                        194        191       181
+                        194        192       185
+                        196        188       182
+m=16                    217        216       203
