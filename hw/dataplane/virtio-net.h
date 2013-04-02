@@ -26,6 +26,7 @@ void virtio_net_data_plane_destroy(VirtIONetDataPlane *s);
 void virtio_net_data_plane_start(VirtIONetDataPlane *s);
 void virtio_net_data_plane_stop(VirtIONetDataPlane *s);
 void virtio_net_data_plane_drain(VirtIONetDataPlane *s);
+void virtio_net_data_plane_set_mrg_rx_bufs(VirtIONetDataPlane *s, int mergeable_rx_bufs);
 #else
 static inline VirtIONetDataPlane *virtio_net_data_plane_create(
         VirtIODevice *vdev)
@@ -37,6 +38,7 @@ static inline void virtio_net_data_plane_destroy(VirtIONetDataPlane *s) {}
 static inline void virtio_net_data_plane_start(VirtIONetDataPlane *s) {}
 static inline void virtio_net_data_plane_stop(VirtIONetDataPlane *s) {}
 static inline void virtio_net_data_plane_drain(VirtIONetDataPlane *s) {}
+static inline void virtio_net_data_plane_set_mrg_rx_bufs(VirtIONetDataPlane *s, int mergeable_rx_bufs) {}
 #endif
 
 #endif /* HW_DATAPLANE_VIRTIO_NET_H */

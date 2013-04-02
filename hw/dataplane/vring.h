@@ -58,5 +58,6 @@ int vring_pop(VirtIODevice *vdev, Vring *vring,
               struct iovec iov[], struct iovec *iov_end,
               unsigned int *out_num, unsigned int *in_num);
 void vring_push(Vring *vring, unsigned int head, int len);
+void vring_push_multiple(Vring *vring, int *head, int *len, int num);
 
 #endif /* VRING_H */

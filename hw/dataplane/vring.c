@@ -360,3 +360,29 @@ void vring_push(Vring *vring, unsigned int head, int len)
         vring->signalled_used_valid = false;
     }
 }
+
+/* Report the use of multiple buffers in bulk */
+void vring_push_multiple(Vring *vring, int *head, int *len, int num)
+{
+    int i;
+    struct vring_used_elem *used;
+    uint16_t new;
+
+    if (vring->broken) {
+        return;
+    }
+
+    for (i = 0; i < num; i++) {
+        used = &vring->vr.used->ring[vring->last_used_idx++ % vring->vr.num];
+        used->id = head[i];
+        used->len = len[i];
+    }
+
+    /* Make sure buffer is written before we update index. */
+    smp_wmb();
+
+    new = vring->vr.used->idx = vring->last_used_idx;
+    if (unlikely((int16_t)(new - vring->signalled_used) < (uint16_t)1)) {
+        vring->signalled_used_valid = false;
+    }
+}

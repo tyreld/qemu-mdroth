@@ -107,6 +107,15 @@ virtio_blk_data_plane_complete_request(void *s, unsigned int head, int ret) "dat
 # hw/dataplane/vring.c
 vring_setup(uint64_t physical, void *desc, void *avail, void *used) "vring physical %#"PRIx64" desc %p avail %p used %p"
 
+# hw/dataplane/virtio-net.c
+virtio_net_data_plane_start(void *s) "dataplane %p"
+virtio_net_data_plane_stop(void *s) "dataplane %p"
+
+virtio_net_data_plane_tx_flush(void *s) "dataplane %p"
+virtio_net_data_plane_tx_write(void *s, int fd, int iovcnt) "dataplane %p, fd %d, iovcnt %d"
+virtio_net_data_plane_tx_write_complete(void *s, int fd, int count) "dataplane %p, fd %d, count %d"
+virtio_net_data_plane_tx_flush_complete(void *s, uint64_t buffers, uint64_t bytes) "dataplane %p buffers %"PRIu64" bytes %"PRIu64""
+
 # thread-pool.c
 thread_pool_submit(void *req, void *opaque) "req %p opaque %p"
 thread_pool_complete(void *req, void *opaque, int ret) "req %p opaque %p ret %d"

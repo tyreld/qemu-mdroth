@@ -243,6 +243,11 @@ static int peer_has_ufo(VirtIONet *n)
 static void virtio_net_set_mrg_rx_bufs(VirtIONet *n, int mergeable_rx_bufs)
 {
     n->mergeable_rx_bufs = mergeable_rx_bufs;
+    g_print("setting mergeable_rx_bufs in general: %d", mergeable_rx_bufs);
+    if (n->dataplane) {
+        g_print("setting mrg rxbufs for dataplane: %d", mergeable_rx_bufs);
+        virtio_net_data_plane_set_mrg_rx_bufs(n->dataplane, mergeable_rx_bufs);
+    }
 
     n->guest_hdr_len = n->mergeable_rx_bufs ?
         sizeof(struct virtio_net_hdr_mrg_rxbuf) : sizeof(struct virtio_net_hdr);
@@ -307,7 +312,7 @@ static void virtio_net_set_features(VirtIODevice *vdev, uint32_t features)
     VirtIONet *n = to_virtio_net(vdev);
 
     /* TODO: doesn't seem to honor command-line setting? */
-    //virtio_net_set_mrg_rx_bufs(n, !!(features & (1 << VIRTIO_NET_F_MRG_RXBUF)));
+    virtio_net_set_mrg_rx_bufs(n, !!(features & (1 << VIRTIO_NET_F_MRG_RXBUF)));
 
     if (n->has_vnet_hdr) {
         tap_set_offload(n->nic->nc.peer,

@@ -21,8 +21,9 @@
 #include "event-poll.h"
 #include "qemu/thread.h"
 #include "vring.h"
+#include "trace.h"
 
-#define DEBUG_VIRTIO_NET_DATAPLANE 1
+//#define DEBUG_VIRTIO_NET_DATAPLANE 1
 //#define DEBUG_VIRTIO_NET_DATAPLANE_VERBOSE 1
 
 #ifdef DEBUG_VIRTIO_NET_DATAPLANE
@@ -41,6 +42,9 @@
     do { } while (0)
 #endif
 
+#define TX_BUFFERING
+#define TX_SEND_BUF_SZ (128 << 10)
+
 typedef struct VirtIONetDataPlaneState {
     QemuThread thread;
     EventPoll event_poll;            /* event poller */
@@ -55,6 +59,11 @@ typedef struct VirtIONetDataPlaneState {
     uint32_t timeout;
     uint32_t previous_timeout;
     uint32_t previous_batch;
+#ifdef TX_BUFFERING
+    uint8_t *sendbuf;
+    size_t sendbuf_size;
+    size_t sendbuf_offset;
+#endif
 } VirtIONetDataPlaneState; 
 
 struct VirtIONetDataPlane {
@@ -65,6 +74,7 @@ struct VirtIONetDataPlane {
     VirtIONetDataPlaneState rx;
     VirtIONetDataPlaneState tx;
     bool has_vnet_hdr;
+    bool mergeable_rx_bufs;
 };
 
 enum {
@@ -95,58 +105,150 @@ static void notify_guest_rx(VirtIONetDataPlane *s)
     event_notifier_set(s->rx.guest_notifier);
 }
 
-static int sum_iov_len(struct iovec *iov, int num)
+#if 0
+#endif
+
+#if 0
+#ifdef DEBUG_VIRTIO_NET_DATAPLANE
+static void print_header(struct virtio_net_hdr_mrg_rxbuf *hdr2, bool rx)
+{
+    struct virtio_net_hdr *hdr = &hdr2->hdr;
+    dprintf("== %s header ==", rx ? "rx" : "tx");
+    dprintf("hdr->flags: %x", hdr->flags);
+    dprintf("hdr->gso_type: %x", hdr->gso_type);
+    dprintf("hdr->gso_size: %x", hdr->gso_size);
+    dprintf("hdr->csum_start: %x", hdr->csum_start);
+    dprintf("hdr->csum_offset: %x", hdr->csum_offset);
+    dprintf("hdr->num_buffers: %x", hdr2->num_buffers);
+}
+#else
+#define print_header(...)
+#endif
+#endif
+
+#ifdef TX_BUFFERING
+
+static int sum_iov_len(const struct iovec *iov, int iovcnt)
 {
     int sum = 0, i;
 
-    for (i = 0; i < num; i++) {
+    for (i = 0; i < iovcnt; i++) {
         sum += iov[i].iov_len;
     }
     return sum;
 }
 
+static ssize_t sendbuf_flush(VirtIONetDataPlane *s)
+{
+    size_t count = s->tx.sendbuf_offset;
+    size_t written = 0;
+    ssize_t ret;
+
+    while (written < count) {
+        do {
+            ret = write(s->fd, s->tx.sendbuf + written, count - written);
+        } while (ret == -1 && (errno == EAGAIN || errno == EINTR));
+        if (ret == -1) {
+            error_report("tap write error: %s", strerror(errno));
+            break;
+        }
+        written += ret;
+    }
+
+    s->tx.sendbuf_offset = 0;
+    return written;
+}
+
+static ssize_t sendbuf_avail_bytes(VirtIONetDataPlane *s)
+{
+    return s->tx.sendbuf_size - s->tx.sendbuf_offset;
+}
+
+static ssize_t sendbuf_append(VirtIONetDataPlane *s, const struct iovec *iov, int iovcnt)
+{
+    ssize_t ret;
+    VirtIONetDataPlaneState *tx = &s->tx;
+
+    /* for simplicity we only buffer complete descriptor chains */
+    if (sendbuf_avail_bytes(s) < sum_iov_len(iov, iovcnt)) {
+        return -EAGAIN;
+    }
+
+    ret = iov_to_buf(iov, iovcnt, 0, tx->sendbuf + tx->sendbuf_offset,
+                     tx->sendbuf_size - tx->sendbuf_offset);
+    s->tx.sendbuf_offset += ret;
+    return ret;
+}
+
+#endif
+
 static int32_t handle_tx_flush(VirtIONetDataPlane *s, int *count)
 {
-    int sum;
     int32_t bytes_written = 0, ret;
+    int ret_errno = 0;
     struct iovec iovec[VIRTIO_NET_VRING_MAX];
     struct iovec *end = &iovec[VIRTIO_NET_VRING_MAX];
     struct iovec *iov = iovec;
-    int head;
+    int head, i = 0;
     unsigned int out_num = 0, in_num = 0;
 
     ddprintf("handle_tx_flush");
-    *count = 0;
+    trace_virtio_net_data_plane_tx_flush(s);
+
     while (1) {
+        iov = iovec;
         head = vring_pop(s->vdev, &s->tx.vring, iov, end, &out_num, &in_num);
         if (head < 0 || out_num <= 0) {
             /* no more input buffers */
             break;
         }
         do {
+#ifdef TX_BUFFERING
+            ret = sendbuf_append(s, iov, out_num);
+            if (ret == -EAGAIN) {
+                ret = sendbuf_flush(s);
+                assert(ret > 0);
+                ret = sendbuf_append(s, iov, out_num);
+                assert(ret > 0);
+            }
+#else
+            trace_virtio_net_data_plane_tx_write(s, s->fd, out_num);
             ret = writev(s->fd, iov, out_num);
-        } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+            ret_errno = errno;
+            trace_virtio_net_data_plane_tx_write_complete(s, s->fd, ret);
+#endif
+        } while (ret == -1 && (ret_errno == EINTR || ret_errno == EAGAIN));
         if (ret == -1) {
-            error_report("tap write error: %s", strerror(errno));
+            error_report("tap writev error: %s", strerror(errno));
             break;
         }
         ddprintf("wrote %d bytes", ret);
+        //struct virtio_net_hdr *hdr = iov->iov_base;
+        //print_header(iov->iov_base, false);
         bytes_written += ret;
-        sum = sum_iov_len(iov, out_num);
+#if 0
+        int sum = sum_iov_len(iov, out_num);
         if (ret < sum) {
             /* TODO: fix this, obviously */
             error_report("incomplete write, data lost (%d < %d)", ret, sum);
         }
+#endif
         vring_push(&s->tx.vring, head, ret);
-        iov += out_num + in_num;
-        *count += 1;
+        //iov += out_num + in_num;
+        i++;
     }
 
-    if (*count > 0) {
+    if (i > 0) {
         notify_guest_tx(s);
+#ifdef TX_BUFFERING
+        ret = sendbuf_flush(s);
+        assert(ret >= 0);
+#endif
     }
 
+    *count = i;
     ddprintf("flushed %d bytes", bytes_written);
+    trace_virtio_net_data_plane_tx_flush_complete(s, *count, bytes_written);
 
     return bytes_written;
 }
@@ -200,6 +302,79 @@ static void set_header(VirtIONetDataPlane *s, struct iovec *iov,
     iov[0].iov_len -= hdr_len;
 }
 
+#if 0
+static uint64_t get_delta(struct timeval t1, struct timeval t2)
+{
+    uint64_t usec = (t2.tv_sec - t1.tv_sec) * 1000 * 1000 + (t2.tv_usec - t1.tv_usec);
+    return usec;
+}
+#endif
+
+//#define VIRTIO_RX_BUF_SIZE (sizeof(struct virtio_net_hdr_mrg_rxbuf) + (64 << 10))
+#define VIRTIO_RX_BUF_SIZE (4096 + 65536)
+#define STAT_INTERVAL 10000
+
+static void handle_rx_mrg_rxbuf(VirtIONetDataPlaneState *rx)
+{
+    VirtIONetDataPlane *s = container_of(rx, VirtIONetDataPlane, rx);
+    struct iovec iovec[VIRTIO_NET_VRING_MAX];
+    struct iovec *end = &iovec[VIRTIO_NET_VRING_MAX];
+    struct iovec *iov = iovec;
+    struct virtio_net_hdr_mrg_rxbuf *hdr = NULL;
+    int head[VIRTIO_NET_VRING_MAX];
+    int len[VIRTIO_NET_VRING_MAX];
+    static unsigned int out_num = 0, in_num = 0;
+    uint8_t buf[VIRTIO_RX_BUF_SIZE];
+    int i;
+
+    vring_disable_notification(s->vdev, &s->rx.vring);
+    while (1) {
+        ssize_t count, offset, guest_offset, ret;
+
+        count = read(s->fd, buf, VIRTIO_RX_BUF_SIZE);
+        if (count == -1) {
+            if (errno != EAGAIN) {
+                dprintf("tap read error: %s", strerror(errno));
+            }
+            continue;
+        }
+
+        i = 0;
+        offset = 0;
+
+        while (count > offset) {
+            iov = iovec;
+            head[i] = vring_pop(s->vdev, &s->rx.vring, iov, end, &out_num, &in_num);
+            if (head[i] < 0) {
+                continue;
+            }
+            iov += out_num;
+            if (i == 0) {
+                hdr = iov->iov_base;
+                memcpy(hdr, buf, sizeof(struct virtio_net_hdr));
+                guest_offset = offset = sizeof(struct virtio_net_hdr_mrg_rxbuf);
+            } else {
+                guest_offset = 0;
+            }
+            ret = iov_from_buf(iov, in_num, guest_offset,
+                               buf + offset, count - offset);
+            len[i] = guest_offset + ret;
+            //len[i] = offset + ret;
+            offset += ret;
+            dprintf("count: %zd, offset: %zd, i: %d, len[i]: %d, head[i]: %d",
+                    count, offset, i, len[i], head[i]);
+            i++;
+        }
+        assert(hdr);
+        assert(i > 0);
+        stw_p(&hdr->num_buffers, i);
+        //dprintf("pushing %d buffers", hdr->num_buffers);
+        vring_push_multiple(&s->rx.vring, head, len, i);
+        notify_guest_rx(s);
+    }
+    vring_enable_notification(s->vdev, &s->rx.vring);
+}
+
 static void handle_rx(EventHandler *handler)
 {
     VirtIONetDataPlaneState *rx = container_of(handler, VirtIONetDataPlaneState,
@@ -217,6 +392,12 @@ static void handle_rx(EventHandler *handler)
     int rx_notify_coalesced = 0;
 
     ddprintf("handle_rx");
+
+    dprintf("s->mergeable_rx_bufs: %d", s->mergeable_rx_bufs);
+    if (s->mergeable_rx_bufs) {
+        dprintf("marker 0");
+        return handle_rx_mrg_rxbuf(rx);
+    }
 
     vring_disable_notification(s->vdev, &s->rx.vring);
     for (;;) {
@@ -260,6 +441,12 @@ static void handle_rx(EventHandler *handler)
 
         do {
             ret = readv(s->fd, iov, in_num);
+#ifdef DEBUG_VIRTIO_NET_DATAPLANE
+            int max_size = sum_iov_len(iov, in_num);
+            if (ret != -1) {
+                dprintf("max size read: %d, ret: %zd", max_size, ret);
+            }
+#endif
         } while (ret == -1 && errno == EINTR);
         if (ret == -1) {
             if (errno != EAGAIN) {
@@ -293,8 +480,6 @@ static void handle_rx(EventHandler *handler)
         if (s->has_vnet_hdr) {
             work_around_broken_dhclient(iov, ret);
         }
-        vnet_hdr = (struct virtio_net_hdr *)iov->iov_base;
-        print_hdr(vnet_hdr);
 #endif
         if (!s->has_vnet_hdr) {
             vring_push(&s->rx.vring, head, ret + sizeof(struct virtio_net_hdr));
@@ -303,7 +488,8 @@ static void handle_rx(EventHandler *handler)
         }
         sent = true;
         deferred = false;
-#define RX_NOTIFY_COALESCE_MAX 10
+//#define RX_NOTIFY_COALESCE_MAX 10
+#define RX_NOTIFY_COALESCE_MAX 0
         if (rx_notify_coalesced > RX_NOTIFY_COALESCE_MAX) {
             rx_notify_coalesced = 0;
             notify_guest_rx(s);
@@ -393,6 +579,7 @@ void virtio_net_data_plane_start(VirtIONetDataPlane *s)
     }
 
     dprintf("start");
+    trace_virtio_net_data_plane_start(s);
 
     /* take over handling of the tap fd from qemu's main loop */
     /* TODO: may have queued packets here, transition requires forcing a
@@ -454,6 +641,11 @@ void virtio_net_data_plane_start(VirtIONetDataPlane *s)
     event_poll_add(&s->tx.event_poll, &s->tx.notify_handler,
                    virtio_queue_get_host_notifier(s->tx.vq),
                    handle_tx_kick, true);
+#ifdef TX_BUFFERING
+    s->tx.sendbuf = g_malloc(TX_SEND_BUF_SZ);
+    s->tx.sendbuf_size = TX_SEND_BUF_SZ;
+    s->tx.sendbuf_offset = 0;
+#endif
 
     s->started = true;
 
@@ -465,6 +657,7 @@ void virtio_net_data_plane_start(VirtIONetDataPlane *s)
 void virtio_net_data_plane_stop(VirtIONetDataPlane *s)
 {
     dprintf("stop");
+    trace_virtio_net_data_plane_stop(s);
     //s->nc_tap->info->poll(s->nc_tap, true);
 }
 
@@ -495,4 +688,9 @@ void virtio_net_data_plane_destroy(VirtIONetDataPlane *s)
 void virtio_net_data_plane_drain(VirtIONetDataPlane *s)
 {
     dprintf("drain");
+}
+
+void virtio_net_data_plane_set_mrg_rx_bufs(VirtIONetDataPlane *s, int mergeable_rx_bufs)
+{
+    s->mergeable_rx_bufs = mergeable_rx_bufs;
 }
