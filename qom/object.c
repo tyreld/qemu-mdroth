@@ -51,6 +51,7 @@ struct TypeImpl
     void *class_data;
 
     void (*instance_init)(Object *obj);
+    void (*instance_init_completion)(Object *obj);
     void (*instance_finalize)(Object *obj);
 
     bool abstract;
@@ -111,6 +112,7 @@ static TypeImpl *type_register_internal(const TypeInfo *info)
     ti->class_data = info->class_data;
 
     ti->instance_init = info->instance_init;
+    ti->instance_init_completion = info->instance_init_completion;
     ti->instance_finalize = info->instance_finalize;
 
     ti->abstract = info->abstract;
@@ -421,6 +423,25 @@ Object *object_new(const char *typename)
     TypeImpl *ti = type_get_by_name(typename);
 
     return object_new_with_type(ti);
+}
+
+
+static void object_init_completion_with_type(Object *obj, TypeImpl *ti)
+{
+    if (type_has_parent(ti)) {
+        object_init_completion_with_type(obj, type_get_parent(ti));
+    }
+
+    if (ti->instance_init_completion) {
+        ti->instance_init_completion(obj);
+    }
+}
+
+void object_init_completion(Object *obj)
+{
+    TypeImpl *ti = type_get_by_name(object_get_class(obj)->type->name);
+
+    object_init_completion_with_type(obj, ti);
 }
 
 Object *object_dynamic_cast(Object *obj, const char *typename)

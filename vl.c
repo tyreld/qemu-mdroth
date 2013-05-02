@@ -2833,6 +2833,8 @@ static int object_create(QemuOpts *opts, void *opaque)
     object_property_add_child(container_get(object_get_root(), "/objects"),
                               id, obj, NULL);
 
+    object_init_completion(obj);
+
     return 0;
 }
 

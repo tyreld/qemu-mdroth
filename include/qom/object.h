@@ -398,6 +398,11 @@ struct Object
  * @instance_init: This function is called to initialize an object.  The parent
  *   class will have already been initialized so the type is only responsible
  *   for initializing its own members.
+ * @instance_init_completion: This function is used mainly cases where an
+ *   object has been instantiated via the command-line, and is called once all
+ *   properties specified via command-line have been set for the object. This
+ *   is not called automatically, but manually via @object_init_completion once
+ *   the processing of said properties is completed.
  * @instance_finalize: This function is called during object destruction.  This
  *   is called before the parent @instance_finalize function has been called.
  *   An object should only free the members that are unique to its type in this
@@ -433,6 +438,7 @@ struct TypeInfo
 
     size_t instance_size;
     void (*instance_init)(Object *obj);
+    void (*instance_init_completion)(Object *obj);
     void (*instance_finalize)(Object *obj);
 
     bool abstract;
@@ -567,6 +573,19 @@ struct InterfaceClass
  * Returns: The newly allocated and instantiated object.
  */
 Object *object_new(const char *typename);
+
+/**
+ * object_init_completion:
+ * @obj: The object to complete initialization of
+ *
+ * In cases where an object is instantiated from a command-line with a number
+ * of properties specified as parameters (generally via -object), or for cases
+ * where a new()/helper function is used to pass/set some minimal number of
+ * properties that are required prior to completion of object initialization,
+ * this function can be called to mark when that occurs to complete object
+ * initialization.
+ */
+void object_init_completion(Object *obj);
 
 /**
  * object_new_with_type:
