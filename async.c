@@ -22,10 +22,13 @@
  * THE SOFTWARE.
  */
 
+#include <glib.h>
 #include "qemu-common.h"
 #include "block/aio.h"
 #include "block/thread-pool.h"
 #include "qemu/main-loop.h"
+#include "qcontext/qcontext.h"
+#include "qcontext/glib-qcontext.h"
 
 /***********************************************************/
 /* bottom halves (can be seen as timers which expire ASAP) */
@@ -217,6 +220,19 @@ AioContext *aio_context_new(void)
                            event_notifier_test_and_clear, NULL);
 
     return ctx;
+}
+
+void aio_context_attach(AioContext *ctx, QContext *qctx)
+{
+    GSource *aio_gsource = aio_get_g_source(ctx);
+    GMainContext *qctx_main_context =
+        glib_qcontext_get_context(GLIB_QCONTEXT(qctx));
+
+    /* TODO: implement AioContext as a QSource instead of a GSource
+     * so we can attach to any QContext implementation instead of
+     * acting directly on the underlying GMainContext
+     */
+    g_source_attach(aio_gsource, qctx_main_context);
 }
 
 void aio_context_ref(AioContext *ctx)

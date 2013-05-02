@@ -17,6 +17,7 @@
 #include "qemu-common.h"
 #include "qemu/queue.h"
 #include "qemu/event_notifier.h"
+#include "qcontext/qcontext.h"
 
 typedef struct BlockDriverAIOCB BlockDriverAIOCB;
 typedef void BlockDriverCompletionFunc(void *opaque, int ret);
@@ -243,5 +244,10 @@ void qemu_aio_set_fd_handler(int fd,
                              AioFlushHandler *io_flush,
                              void *opaque);
 #endif
+
+/* Attach an AioContext to a QContext so that it can be driven by a
+ * QContext-based event loop
+ */
+void aio_context_attach(AioContext *ctx, QContext *qctx);
 
 #endif

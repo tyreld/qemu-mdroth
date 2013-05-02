@@ -136,7 +136,6 @@ static GArray *gpollfds;
 int qemu_init_main_loop(void)
 {
     int ret;
-    GSource *src;
     Error *err = NULL;
 
     init_clocks();
@@ -159,62 +158,37 @@ int qemu_init_main_loop(void)
         return ret;
     }
 
+    /* TODO: we can drop gpollfds completely once we integrate
+     * Ping Fan's slirp->glib patches. Until then slirp won't
+     * work since we're no longer driving it via fill/poll
+     * functions
+     */
     gpollfds = g_array_new(FALSE, FALSE, sizeof(GPollFD));
     qemu_aio_context = aio_context_new();
-    src = aio_get_g_source(qemu_aio_context);
-    g_source_attach(src, NULL);
-    g_source_unref(src);
+    aio_context_attach(qemu_aio_context, qemu_qcontext);
     return 0;
 }
 
-static int max_priority;
-
 #ifndef _WIN32
-static int glib_pollfds_idx;
-static int glib_n_poll_fds;
-
-static void glib_pollfds_fill(uint32_t *cur_timeout)
-{
-    GMainContext *context = g_main_context_default();
-    int timeout = 0;
-    int n;
-
-    g_main_context_prepare(context, &max_priority);
-
-    glib_pollfds_idx = gpollfds->len;
-    n = glib_n_poll_fds;
-    do {
-        GPollFD *pfds;
-        glib_n_poll_fds = n;
-        g_array_set_size(gpollfds, glib_pollfds_idx + glib_n_poll_fds);
-        pfds = &g_array_index(gpollfds, GPollFD, glib_pollfds_idx);
-        n = g_main_context_query(context, max_priority, &timeout, pfds,
-                                 glib_n_poll_fds);
-    } while (n != glib_n_poll_fds);
-
-    if (timeout >= 0 && timeout < *cur_timeout) {
-        *cur_timeout = timeout;
-    }
-}
-
-static void glib_pollfds_poll(void)
-{
-    GMainContext *context = g_main_context_default();
-    GPollFD *pfds = &g_array_index(gpollfds, GPollFD, glib_pollfds_idx);
-
-    if (g_main_context_check(context, max_priority, pfds, glib_n_poll_fds)) {
-        g_main_context_dispatch(context);
-    }
-}
 
 #define MAX_MAIN_LOOP_SPIN (1000)
 
 static int os_host_main_loop_wait(uint32_t timeout)
 {
-    int ret;
+    QContext *qctx = qemu_get_qcontext();
+    gboolean ret;
+    int calculated_timeout = 0;
+    int events_dispatched = 0;
     static int spin_counter;
 
-    glib_pollfds_fill(&timeout);
+    ret = qcontext_prepare(qctx, &calculated_timeout);
+    if (ret) {
+        qcontext_dispatch(qctx);
+        events_dispatched = 1;
+    }
+    if (calculated_timeout >= 0 && calculated_timeout < timeout) {
+        timeout = calculated_timeout;
+    }
 
     /* If the I/O thread is very busy or we are incorrectly busy waiting in
      * the I/O thread, this can lead to starvation of the BQL such that the
@@ -241,15 +215,16 @@ static int os_host_main_loop_wait(uint32_t timeout)
     } else {
         spin_counter++;
     }
-
-    ret = g_poll((GPollFD *)gpollfds->data, gpollfds->len, timeout);
-
+    ret = qcontext_poll(qctx, timeout);
     if (timeout > 0) {
         qemu_mutex_lock_iothread();
     }
+    if (ret && qcontext_check(qctx)) {
+        qcontext_dispatch(qctx);
+        events_dispatched = 1;
+    }
 
-    glib_pollfds_poll();
-    return ret;
+    return events_dispatched;
 }
 #else
 /***********************************************************/
@@ -390,6 +365,8 @@ static void pollfds_poll(GArray *pollfds, int nfds, fd_set *rfds,
         pfd->revents = revents & pfd->events;
     }
 }
+
+static int max_priority;
 
 static int os_host_main_loop_wait(uint32_t timeout)
 {
