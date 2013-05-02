@@ -26,6 +26,7 @@
 #define QEMU_MAIN_LOOP_H 1
 
 #include "block/aio.h"
+#include "qcontext/qcontext.h"
 
 #define SIG_IPI SIGUSR1
 
@@ -168,8 +169,23 @@ void qemu_del_wait_object(HANDLE handle, WaitObjectFunc *func, void *opaque);
 
 /* async I/O support */
 
+#define QSOURCE_IOHANDLER "iohandler"
+
 typedef void IOReadHandler(void *opaque, const uint8_t *buf, int size);
 typedef int IOCanReadHandler(void *opaque);
+
+QContext *qemu_get_qcontext(void);
+/**
+ * iohandler_attach: Attach a QSource to a QContext
+ *
+ * This enables the use of IOHandler interfaces such as
+ * set_fd_handler() on the given QContext. IOHandler lists will be
+ * tracked/handled/dispatched based on a named QSource that is added to
+ * the QContext
+ *
+ * @ctx: A QContext to add an IOHandler QSource to
+ */
+void iohandler_attach(QContext *ctx);
 
 /**
  * qemu_set_fd_handler2: Register a file descriptor with the main loop
@@ -217,6 +233,13 @@ int qemu_set_fd_handler2(int fd,
                          IOHandler *fd_write,
                          void *opaque);
 
+int set_fd_handler2(QContext *ctx,
+                    int fd,
+                    IOCanReadHandler *fd_read_poll,
+                    IOHandler *fd_read,
+                    IOHandler *fd_write,
+                    void *opaque);
+
 /**
  * qemu_set_fd_handler: Register a file descriptor with the main loop
  *
@@ -249,6 +272,12 @@ int qemu_set_fd_handler(int fd,
                         IOHandler *fd_read,
                         IOHandler *fd_write,
                         void *opaque);
+
+int set_fd_handler(QContext *ctx,
+                   int fd,
+                   IOHandler *fd_read,
+                   IOHandler *fd_write,
+                   void *opaque);
 
 #ifdef CONFIG_POSIX
 /**
@@ -302,8 +331,6 @@ void qemu_mutex_unlock_iothread(void);
 /* internal interfaces */
 
 void qemu_fd_register(int fd);
-void qemu_iohandler_fill(GArray *pollfds);
-void qemu_iohandler_poll(GArray *pollfds, int rc);
 
 QEMUBH *qemu_bh_new(QEMUBHFunc *cb, void *opaque);
 void qemu_bh_schedule_idle(QEMUBH *bh);

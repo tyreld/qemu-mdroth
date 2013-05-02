@@ -27,6 +27,8 @@
 #include "slirp/slirp.h"
 #include "qemu/main-loop.h"
 #include "block/aio.h"
+#include "qcontext/qcontext.h"
+#include "qcontext/glib-qcontext.h"
 
 #ifndef _WIN32
 
@@ -107,6 +109,13 @@ static int qemu_signal_init(void)
 }
 #endif
 
+static QContext *qemu_qcontext;
+
+QContext *qemu_get_qcontext(void)
+{
+    return qemu_qcontext;
+}
+
 static AioContext *qemu_aio_context;
 
 AioContext *qemu_get_aio_context(void)
@@ -128,12 +137,22 @@ int qemu_init_main_loop(void)
 {
     int ret;
     GSource *src;
+    Error *err = NULL;
 
     init_clocks();
     if (init_timer_alarm() < 0) {
         fprintf(stderr, "could not initialize alarm timer\n");
         exit(1);
     }
+
+    qemu_qcontext = QCONTEXT(glib_qcontext_new("main", false, &err));
+    if (err) {
+        g_warning("error initializing main qcontext");
+        error_free(err);
+        return -1;
+    }
+
+    iohandler_attach(qemu_qcontext);
 
     ret = qemu_signal_init();
     if (ret) {
@@ -464,9 +483,7 @@ int main_loop_wait(int nonblocking)
     slirp_update_timeout(&timeout);
     slirp_pollfds_fill(gpollfds);
 #endif
-    qemu_iohandler_fill(gpollfds);
     ret = os_host_main_loop_wait(timeout);
-    qemu_iohandler_poll(gpollfds, ret);
 #ifdef CONFIG_SLIRP
     slirp_pollfds_poll(gpollfds, (ret < 0));
 #endif
