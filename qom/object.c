@@ -991,6 +991,31 @@ static void object_finalize_child_property(Object *obj, const char *name,
     object_unref(child);
 }
 
+char *object_property_add_unnamed_child(Object *obj, Object *child, Error **errp)
+{
+    int idx = 0;
+    bool next_idx_found = false;
+    char name[64];
+    ObjectProperty *prop;
+
+    while (!next_idx_found) {
+        sprintf(name, "unnamed[%d]", idx);
+        QTAILQ_FOREACH(prop, &obj->properties, node) {
+            if (strcmp(name, prop->name) == 0) {
+                idx++;
+                break;
+            }
+        }
+        if (!prop) {
+            next_idx_found = true;
+        }
+    }
+
+    object_property_add_child(obj, name, child, errp);
+
+    return error_is_set(errp) ? NULL : g_strdup(name);
+}
+
 void object_property_add_child(Object *obj, const char *name,
                                Object *child, Error **errp)
 {

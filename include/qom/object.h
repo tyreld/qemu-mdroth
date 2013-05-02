@@ -1071,6 +1071,22 @@ void object_property_add_child(Object *obj, const char *name,
                                Object *child, struct Error **errp);
 
 /**
+ * object_property_add_unnamed_child:
+ *
+ * @obj: the object to add a property to
+ * @name: the name of the property
+ * @child: the child object
+ * @errp: if an error occurs, a pointer to an area to store the area
+ *
+ * Same as object_property_add_child, but will allocate a unique name to
+ * identify the child property.
+ *
+ * Returns: The name assigned to the child property, or NULL on failure.
+ */
+char *object_property_add_unnamed_child(Object *obj, Object *child,
+                                        struct Error **errp);
+
+/**
  * object_property_add_link:
  * @obj: the object to add a property to
  * @name: the name of the property
