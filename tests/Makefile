@@ -31,6 +31,12 @@ gcov-files-test-iov-y = util/iov.c
 check-unit-y += tests/test-aio$(EXESUF)
 gcov-files-test-aio-$(CONFIG_WIN32) = aio-win32.c
 gcov-files-test-aio-$(CONFIG_POSIX) = aio-posix.c
+check-unit-y += tests/test-qcontext$(EXESUF)
+gcov-files-test-qcontext-y = util/qcontext.c
+gcov-files-test-qcontext-y = util/glib-qcontext.c
+gcov-files-test-qcontext-y = util/qsource.c
+gcov-files-test-qcontext-y = iohandler.c
+gcov-files-test-qcontext-y = main-loop.c
 check-unit-y += tests/test-thread-pool$(EXESUF)
 gcov-files-test-thread-pool-y = thread-pool.c
 gcov-files-test-hbitmap-y = util/hbitmap.c
@@ -91,6 +97,7 @@ tests/check-qfloat$(EXESUF): tests/check-qfloat.o libqemuutil.a
 tests/check-qjson$(EXESUF): tests/check-qjson.o libqemuutil.a libqemustub.a
 tests/test-coroutine$(EXESUF): tests/test-coroutine.o $(block-obj-y) libqemuutil.a libqemustub.a
 tests/test-aio$(EXESUF): tests/test-aio.o $(block-obj-y) libqemuutil.a libqemustub.a
+tests/test-qcontext$(EXESUF): tests/test-qcontext.o libqemuutil.a libqemustub.a qom/object.o qom/container.o qom/qom-qobject.o qcontext/qcontext.o qcontext/glib-qcontext.o qcontext/qsource.o $(block-obj-y)
 tests/test-thread-pool$(EXESUF): tests/test-thread-pool.o $(block-obj-y) libqemuutil.a libqemustub.a
 tests/test-iov$(EXESUF): tests/test-iov.o libqemuutil.a
 tests/test-hbitmap$(EXESUF): tests/test-hbitmap.o libqemuutil.a libqemustub.a
