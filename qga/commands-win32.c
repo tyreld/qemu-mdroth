@@ -15,6 +15,7 @@
 #include <wtypes.h>
 #include <powrprof.h>
 #include "qga/guest-agent-core.h"
+#include "qga/guest-file-command-state.h"
 #include "qga-qmp-commands.h"
 #include "qapi/qmp/qerror.h"
 
@@ -265,99 +266,58 @@ int64_t qmp_guest_set_vcpus(GuestLogicalProcessorList *vcpus, Error **errp)
 }
 
 typedef struct GuestFileHandle {
-    uint64_t id;
-    //FILE *fh;
     GIOChannel *chan;
-    QTAILQ_ENTRY(GuestFileHandle) next;
+    GPollFD pollfd;
+    bool pollable;
 } GuestFileHandle;
 
-static struct {
-    QTAILQ_HEAD(, GuestFileHandle) filehandles;
-} guest_file_state;
-
-static uint64_t guest_file_handle_add(GIOChannel *chan, Error **errp)
+int64_t guest_file_handle_add_fd(int fd, const char *mode, Error **errp)
 {
-    GuestFileHandle *gfh;
-    uint64_t handle;
-
-    handle = ga_get_fd_handle(ga_state, errp);
-    if (error_is_set(errp)) {
-        return 0;
-    }
-
-    gfh = g_malloc0(sizeof(GuestFileHandle));
-    gfh->id = handle;
-    //gfh->fh = fh;
-    gfh->chan = chan;
-    QTAILQ_INSERT_TAIL(&guest_file_state.filehandles, gfh, next);
-
-    return handle;
-}
-
-static GuestFileHandle *guest_file_handle_find(int64_t id, Error **err)
-{
+    GError *gerr = NULL;
     GuestFileHandle *gfh;
 
-    QTAILQ_FOREACH(gfh, &guest_file_state.filehandles, next)
-    {
-        if (gfh->id == id) {
-            return gfh;
-        }
+    gfh = g_new0(GuestFileHandle, 1);
+    gfh->chan = g_io_channel_win32_new_fd(fd);
+    if (strcmp(mode, "a")) {
+        g_io_channel_win32_make_pollfd(gfh->chan,
+                                       G_IO_IN | G_IO_OUT | G_IO_HUP | G_IO_ERR,
+                                       &gfh->pollfd);
+        gfh->pollable = true;
     }
 
-    error_setg(err, "handle '%" PRId64 "' has not been found", id);
-    return NULL;
+    g_io_channel_set_encoding(gfh->chan, NULL, &gerr);
+    if (gerr) {
+        g_error_free(gerr);
+        error_setg(errp, "error setting encoding for channel");
+    }
+    g_io_channel_set_buffered(gfh->chan, false);
+
+    return guest_file_handle_add(gfh, errp);
 }
 
 int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode, Error **err)
 {
-    GIOChannel *chan;
     GError *gerr = NULL;
-#ifndef _WIN32
-    //int fd;
-    //int64_t ret = -1;
-#endif
+    GuestFileHandle *gfh;
     int64_t handle;
 
     if (!has_mode) {
         mode = "r";
     }
     slog("guest-file-open called, filepath: %s, mode: %s", path, mode);
-    //fh = fopen(path, mode);
-    chan = g_io_channel_new_file(path, mode, &gerr);
+    gfh = g_new0(GuestFileHandle, 1);
+    gfh->chan = g_io_channel_new_file(path, mode, &gerr);
     if (gerr) {
         error_setg_errno(err, errno, "failed to open file '%s' (mode: '%s')",
                          path, mode);
+        g_free(gfh);
         return -1;
     }
 
-#if 0
-#ifndef _WIN32
-    /* set fd non-blocking to avoid common use cases (like reading from a
-     * named pipe) from hanging the agent
-     */
-    fd = fileno(fh);
-    ret = fcntl(fd, F_GETFL);
-    ret = fcntl(fd, F_SETFL, ret | O_NONBLOCK);
-    if (ret == -1) {
-        error_setg_errno(err, errno, "failed to make file '%s' non-blocking",
-                         path);
-        fclose(fh);
-        return -1;
-    }
-#endif
-#endif
-
-    g_io_channel_set_flags(chan, G_IO_FLAG_NONBLOCK, &gerr);
-    if (gerr) {
-        error_setg_errno(err, errno, "failed to make file '%s' non-blocking",
-                         path);
-    }
-
-    //handle = guest_file_handle_add(fh, err);
-    handle = guest_file_handle_add(chan, err);
+    handle = guest_file_handle_add(gfh, err);
     if (error_is_set(err)) {
-        g_io_channel_shutdown(chan, true, NULL);
+        g_io_channel_shutdown(gfh->chan, true, NULL);
+        g_free(gfh);
         return -1;
     }
 
@@ -385,23 +345,22 @@ void qmp_guest_file_close(int64_t handle, Error **err)
 
     g_io_channel_shutdown(gfh->chan, true, NULL);
 
-    QTAILQ_REMOVE(&guest_file_state.filehandles, gfh, next);
-    g_free(gfh);
+    guest_file_handle_remove(handle);
 }
 
 struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
                                           int64_t count, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
     GuestFileRead *read_data = NULL;
-    gchar *buf;
-    //FILE *fh;
-    GIOChannel *chan;
+    gchar *buf = NULL;
     GError *gerr = NULL;
     GIOStatus status;
     gsize read_count = 0;
+    GIOCondition condition = 0;
+    GuestFileHandle *gfh;
 
-    if (!gfh) {
+    gfh = guest_file_handle_find(handle, err);
+    if (error_is_set(err)) {
         return NULL;
     }
 
@@ -413,15 +372,23 @@ struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
         return NULL;
     }
 
-    //fh = gfh->fh;
-    chan = gfh->chan;
     buf = g_malloc0(count+1);
-    //read_count = fread(buf, 1, count, fh);
-    status = g_io_channel_read_chars(chan, buf, count, &read_count, &gerr);
-    if (gerr) {
-        error_setg(err, "failed to read file: %s", gerr->message);
-        g_error_free(gerr);
-        return NULL;
+    if (gfh->pollable) {
+        if (g_io_channel_win32_poll(&gfh->pollfd, 1, 0)) {
+            condition = gfh->pollfd.revents;
+        }
+    }
+
+    if (!gfh->pollable || (condition & G_IO_IN)) {
+        status = g_io_channel_read_chars(gfh->chan, buf, count, &read_count,
+                                         &gerr);
+        if (gerr) {
+            error_setg(err, "failed to read file: %s", gerr->message);
+            g_error_free(gerr);
+            return NULL;
+        }
+    } else {
+        status = G_IO_STATUS_NORMAL;
     }
 
     if (status == G_IO_STATUS_ERROR) {
@@ -440,22 +407,10 @@ struct GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
         }
     }
 
-#if 0
-    if (ferror(fh)) {
-        error_setg_errno(err, errno, "failed to read file");
-        slog("guest-file-read failed, handle: %ld", handle);
-    } else {
-        buf[read_count] = 0;
-        read_data = g_malloc0(sizeof(GuestFileRead));
-        read_data->count = read_count;
-        read_data->eof = feof(fh);
-        if (read_count) {
-            read_data->buf_b64 = g_base64_encode(buf, read_count);
-        }
+    /* TODO: need this check ? */
+    if (buf) {
+        g_free(buf);
     }
-#endif
-    g_free(buf);
-    //clearerr(fh);
 
     return read_data;
 }
@@ -467,16 +422,16 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
     gchar *buf;
     gsize buf_len;
     gsize write_count = 0;
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
     //FILE *fh;
     GError *gerr = NULL;
     GIOStatus status;
+    GuestFileHandle *gfh;
 
-    if (!gfh) {
+    gfh = guest_file_handle_find(handle, err);
+    if (error_is_set(err)) {
         return NULL;
     }
 
-    //fh = gfh->fh;
     buf = (gchar *)g_base64_decode(buf_b64, &buf_len);
 
     if (!has_count) {
@@ -488,7 +443,8 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
         return NULL;
     }
 
-    status = g_io_channel_write_chars(gfh->chan, buf, count, &write_count, &gerr);
+    status = g_io_channel_write_chars(gfh->chan, buf, count, &write_count,
+                                      &gerr);
     if (gerr) {
         error_setg(err, "failed to write to file: %s", gerr->message); 
         slog("guest-file-write failed, handle: %ld", handle);
@@ -525,20 +481,19 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
 struct GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
                                           int64_t whence, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
     GuestFileSeek *seek_data = NULL;
     //FILE *fh;
-    GIOChannel *chan;
     GIOStatus status;
     GError *gerr = NULL;
     //int ret;
+    GuestFileHandle *gfh;
 
-    if (!gfh) {
+    gfh = guest_file_handle_find(handle, err);
+    if (error_is_set(err)) {
         return NULL;
     }
 
-    chan = gfh->chan;
-    status = g_io_channel_seek_position(chan, offset, whence, &gerr);
+    status = g_io_channel_seek_position(gfh->chan, offset, whence, &gerr);
     if (gerr) {
         error_setg(err, "failed to seek file: %s", gerr->message);
         return NULL;
@@ -572,13 +527,14 @@ struct GuestFileSeek *qmp_guest_file_seek(int64_t handle, int64_t offset,
 
 void qmp_guest_file_flush(int64_t handle, Error **err)
 {
-    GuestFileHandle *gfh = guest_file_handle_find(handle, err);
     //FILE *fh;
     GIOStatus status;
     GError *gerr = NULL;
     //int ret;
+    GuestFileHandle *gfh;
 
-    if (!gfh) {
+    gfh = guest_file_handle_find(handle, err);
+    if (error_is_set(err)) {
         return;
     }
 

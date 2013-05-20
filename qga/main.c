@@ -899,8 +899,66 @@ int64_t ga_get_fd_handle(GAState *s, Error **errp)
     return handle;
 }
 
+#ifdef CONFIG_UUID
+#include <uuid/uuid.h>
+#else
+typedef unsigned char uuid_t[16];
+#endif
+#include "sysemu/sysemu.h"     /* UUID_FMT */
+
+#ifndef CONFIG_UUID
+static void uuid_generate(uuid_t uuid)
+{
+    memset(uuid, 0, sizeof(uuid));
+    uuid[0] = 0;
+    uuid[1] = 1;
+    uuid[2] = 2;
+    uuid[3] = 3;
+    uuid[4] = 4;
+    uuid[5] = 5;
+    uuid[6] = 6;
+    uuid[7] = 7;
+    uuid[8] = 8;
+}
+#endif
+
+#include "qga-qmp-commands.h"
+static void guest_exec_gen_uuid(uuid_t uuid, GPid gpid)
+{
+#ifndef CONFIG_UUID
+    int64_t timestamp = qmp_guest_get_time(NULL);
+    /* in lieu of libuuid, create a unique "uuid" based on timestamp + pid.
+     * not cryptographically safe, but good enough for process handles since
+     * we trust our hosts/clients
+     */
+    memcpy(uuid, (int8_t *)&gpid, sizeof(GPid));
+    memcpy(uuid + MIN(sizeof(GPid), 8), (int8_t *)&timestamp, sizeof(int64_t));
+#else
+    uuid_generate(uuid);
+#endif
+}
+
+static int test_uuid(void)
+{
+    uuid_t uuid;
+    char str[1024];
+
+    //uuid_generate(uuid);
+    guest_exec_gen_uuid(uuid, 59);
+    snprintf(str, sizeof(str), UUID_FMT, uuid[0], uuid[1],
+                   uuid[2], uuid[3], uuid[4], uuid[5],
+                   uuid[6], uuid[7], uuid[8], uuid[9],
+                   uuid[10], uuid[11], uuid[12], uuid[13],
+                   uuid[14], uuid[15]);
+
+    g_warning("uuid: %s", str);
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
+    return test_uuid();
     const char *sopt = "hVvdm:p:l:f:F::b:s:t:";
     const char *method = NULL, *path = NULL;
     const char *log_filepath = NULL;

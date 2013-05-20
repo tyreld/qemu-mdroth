@@ -1905,6 +1905,7 @@ EOF
     uuid="yes"
     libs_softmmu="$uuid_libs $libs_softmmu"
     libs_tools="$uuid_libs $libs_tools"
+    libs_qga="$uuid_libs $libs_qga"
   else
     if test "$uuid" = "yes" ; then
       feature_not_found "uuid"

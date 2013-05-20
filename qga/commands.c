@@ -14,6 +14,7 @@
 
 #ifndef _WIN32
 #include <sys/wait.h>
+#include <signal.h>
 #endif
 
 #include "qga/guest-agent-core.h"
@@ -91,11 +92,13 @@ static struct {
 
 typedef struct GuestExecInfo {
     GPid gpid;
-    const char *cmdline;
+    char *cmdline;
     int64_t handle; /* this should be UUID */
     gint fd_in;
     gint fd_out;
     gint fd_err;
+    bool reaped;
+    GuestExecStatus last_exec_status;
     QTAILQ_ENTRY(GuestExecInfo) next;
 } GuestExecInfo;
 
@@ -112,11 +115,12 @@ static GuestExecInfo *guest_exec_info_new(GPid gpid, const char *cmdline, gint f
 
     gei = g_new(GuestExecInfo, 1);
     gei->gpid = gpid;
-    gei->cmdline = cmdline;
+    gei->cmdline = g_strdup(cmdline);
     gei->fd_in = fd_in;
     gei->fd_out = fd_out;
     gei->fd_err = fd_err;
     gei->handle = -1;
+    gei->reaped = false;
 
     return gei;
 }
@@ -144,14 +148,27 @@ static GuestExecInfo *guest_exec_info_find(int64_t handle)
     return NULL;
 }
 
-#ifndef WIN32
+static void guest_exec_info_remove(int64_t handle)
+{
+    GuestExecInfo *gei = guest_exec_info_find(handle);
+
+    if (!gei) {
+        return;
+    }
+
+    QTAILQ_REMOVE(&guest_exec_state.processes, gei, next);
+    g_free(gei->cmdline);
+    g_free(gei);
+}
+
+#ifndef _WIN32
 GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
+                                       bool has_timeout, int64_t timeout,
                                        Error **errp)
 {
     GuestExecInfo *gei;
     GuestExecStatus *ges;
-    int status;
-    int ret;
+    int status, ret, i = 0;
 
     gei = guest_exec_info_find(handle);
     if (!gei) {
@@ -159,17 +176,49 @@ GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
         return NULL;
     }
 
-    ret = waitpid(gei->gpid, &status, (has_wait && wait) ? 0 : WNOHANG);
-    if (ret == -1) {
-        error_setg_errno(errp, errno, "waitpid error, pid: %d", gei->gpid);
-        return NULL;
+    if (gei->reaped) {
+        /* already reaped, so return previous status instead of waiting */
+        ges = g_new0(GuestExecStatus, 1);
+        ges->exited = gei->last_exec_status.exited;
+        ges->exit_code = gei->last_exec_status.exit_code;
+        return ges;
+    }
+
+    if (has_wait && wait && has_timeout && timeout > 0) {
+        while (1) {
+            if (i++ >= timeout) {
+                error_setg(errp,
+                           "exceeded %"PRId64" ms timeout waiting for process",
+                           timeout);
+                return NULL;
+            }
+
+            ret = waitpid(gei->gpid, &status, WNOHANG);
+            if (ret == -1) {
+                error_setg_errno(errp, errno, "waitpid error, pid: %d", gei->gpid);
+                return NULL;
+            }
+            if (WIFEXITED(status)) {
+                break;
+            }
+            usleep(1000);
+        }
+    } else {
+        ret = waitpid(gei->gpid, &status, (has_wait && wait) ? 0 : WNOHANG);
+        if (ret == -1) {
+            error_setg_errno(errp, errno, "waitpid error, pid: %d", gei->gpid);
+            return NULL;
+        }
     }
 
     ges = g_new0(GuestExecStatus, 1);
     ges->handle = gei->handle;
-    if (WIFEXITED(status)) {
+    if (ret > 0 && WIFEXITED(status)) {
         ges->exited = true;
         ges->exit_code = WEXITSTATUS(status);
+        gei->last_exec_status.exit_code = true;
+        gei->last_exec_status.exited = true;
+        gei->reaped = true;
     } else {
         ges->exited = false;
         ges->exit_code = 0;
@@ -180,17 +229,26 @@ GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
 
 #else
 GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
+                                       bool has_timeout, int64_t timeout,
                                        Error **errp)
 {
-    DWORD p_exit_code;
+    DWORD p_exit_code = 0;
     bool ret;
     GuestExecInfo *gei;
     GuestExecStatus *ges;
+    int64_t duration = 0;
 
     gei = guest_exec_info_find(handle);
     if (!gei) {
         error_setg(errp, "process not found for handle %"PRId64, handle);
         return NULL;
+    }
+
+    if (gei->reaped) {
+        /* already reaped, return previous exec status */
+        ges = g_new0(GuestExecStatus, 1);
+        ges->exited = gei->last_exec_status.exited;
+        ges->exit_code = gei->last_exec_status.exit_code;
     }
 
     do {
@@ -200,8 +258,10 @@ GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
                        (int)GetLastError());
             return NULL;
         }
-
-    } while (has_wait && wait && p_exit_code == STILL_ACTIVE);
+        Sleep(1);
+        if (has_timeout && duration > timeout) {
+            break;
+        } duration++; } while (has_wait && wait && p_exit_code == STILL_ACTIVE);
 
     ges = g_new(GuestExecStatus, 1);
     /* TODO: expose actual handle? only seems useful on linux */
@@ -212,25 +272,43 @@ GuestExecStatus *qmp_guest_exec_status(int64_t handle, bool has_wait, bool wait,
     } else {
         ges->exited = true;
         ges->exit_code = p_exit_code;
+        gei->last_exec_status.exited = true;
+        gei->last_exec_status.exit_code = true;
+        gei->reaped = true;
     }
 
     return ges;
 }
 #endif /* WIN32 */
 
-/*
-gboolean            g_spawn_async_with_pipes            (const gchar *working_directory,
-                                                         gchar **argv,
-                                                         gchar **envp,
-                                                         GSpawnFlags flags,
-                                                         GSpawnChildSetupFunc child_setup,
-                                                         gpointer user_data,
-                                                         GPid *child_pid,
-                                                         gint *standard_input,
-                                                         gint *standard_output,
-                                                         gint *standard_error,
-                                                         GError **error);
-*/
+void qmp_guest_exec_close(int64_t handle, Error **errp)
+{
+    GuestExecInfo *gei;
+    GuestExecStatus *ges;
+
+    ges = qmp_guest_exec_status(handle, false, false, false, 0, errp);
+    if (error_is_set(errp)) {
+        goto out;
+    }
+
+    if (ges->exited) {
+        goto out;
+    }
+   
+    gei = guest_exec_info_find(handle);
+    if (!gei) {
+        error_setg(errp, "process handle %"PRId64" not found", handle);
+        return;
+    }
+#ifndef _WIN32
+    kill(gei->gpid, SIGKILL);
+#else
+    TerminateProcess(gei->gpid, -1);
+#endif
+
+out:
+    guest_exec_info_remove(handle);
+}
 
 #define QGA_DEBUG
 
@@ -251,11 +329,6 @@ static GuestExecInfo *guest_exec_spawn(const char *cmdline, bool interactive,
                   gerr->message);
         return NULL;
     }
-#ifdef QGA_DEBUG
-    int i;
-    for (i = 0; i < argc; i++) {
-        g_print("argv[%d]: %s\n", i, argv[i]); }
-#endif
 
     ret = g_spawn_async_with_pipes(NULL, argv, NULL,
                                    default_flags, NULL, NULL, &gpid,
@@ -265,20 +338,25 @@ static GuestExecInfo *guest_exec_spawn(const char *cmdline, bool interactive,
                   gerr->message);
         return NULL;
     }
-
-#ifdef QGA_DEBUG
-#ifndef _WIN32
-    g_print("gpid: %d\n", gpid);
-#endif
-    g_print("return: %d\n", ret);
-    /*
-    g_print("fd_in: %d, fd_out: %d, fd_err: %d\n",
-            *fd_in, *fd_out, *fd_err);
-            */
-#endif
+    if (!ret) {
+        error_setg(errp, "failed to execute command");
+        return NULL;
+    }
 
     return guest_exec_info_new(gpid, cmdline, fd_in, fd_out, fd_err);
 }
+
+#ifdef QGA_DEBUG
+static void print_gei(GuestExecInfo *gei)
+{
+    g_print("gei->gpid: %d\n", (int)gei->gpid);
+    g_print("gei->cmdline: %s\n", gei->cmdline);
+    g_print("gei->handle: %d\n", (int)gei->handle);
+    g_print("gei->fd_in: %d\n", (int)gei->fd_in);
+    g_print("gei->fd_out: %d\n", (int)gei->fd_out);
+    g_print("gei->fd_err: %d\n", (int)gei->fd_err);
+}
+#endif
 
 GuestExecAsyncResponse *qmp_guest_exec_async(const char *cmdline,
                                              bool has_interactive,
@@ -289,13 +367,13 @@ GuestExecAsyncResponse *qmp_guest_exec_async(const char *cmdline,
     GuestExecInfo *gei;
     int32_t handle;
     //FILE *fh;
-    GIOChannel *chan;
 
     gei = guest_exec_spawn(cmdline, has_interactive && interactive, errp);
     if (error_is_set(errp)) {
         return NULL;
     }
 
+    print_gei(gei);
     ger = g_new0(GuestExecAsyncResponse, 1);
 
     /* TODO: clean this up it looks like crap */
@@ -308,9 +386,9 @@ GuestExecAsyncResponse *qmp_guest_exec_async(const char *cmdline,
             return NULL;
         }
 #endif
-        chan = g_io_channel_unix_new(gei->fd_in);
         ger->has_handle_stdin = true;
-        ger->handle_stdin = guest_file_handle_add(chan, errp);
+        ger->handle_stdin =
+            guest_file_handle_add_fd(gei->fd_in, "a", errp);
         if (error_is_set(errp)) {
             return NULL;
         }
@@ -323,9 +401,9 @@ GuestExecAsyncResponse *qmp_guest_exec_async(const char *cmdline,
         return NULL;
     }
 #endif
-    chan = g_io_channel_unix_new(gei->fd_out);
     ger->has_handle_stdout = true;
-    ger->handle_stdout = guest_file_handle_add(chan, errp);
+    ger->handle_stdout =
+            guest_file_handle_add_fd(gei->fd_out, "r", errp);
     if (error_is_set(errp)) {
         return NULL;
     }
@@ -337,15 +415,15 @@ GuestExecAsyncResponse *qmp_guest_exec_async(const char *cmdline,
         return NULL;
     }
 #endif
-    chan = g_io_channel_unix_new(gei->fd_err);
     ger->has_handle_stderr = true;
-    ger->handle_stderr = guest_file_handle_add(chan, errp);
+    ger->handle_stderr =
+            guest_file_handle_add_fd(gei->fd_err, "r", errp);
     if (error_is_set(errp)) {
         return NULL;
     }
 
     handle = guest_exec_info_register(gei);
-    ger->status = qmp_guest_exec_status(handle, false, false, errp);
+    ger->status = qmp_guest_exec_status(handle, false, false, false, 0, errp);
     if (error_is_set(errp)) {
         return NULL;
     }
@@ -360,19 +438,28 @@ typedef struct GuestExecPipeData {
     Error *err;
     bool done;
     int debug_id;
+#ifdef _WIN32
+    GPollFD pollfd;
+#endif
 } GuestExecPipeData;
 
 static GuestExecPipeData *guest_exec_pipe_data_new(GIOChannel *chan,
                                                    int debug_id)
 {
-    GuestExecPipeData *pd = g_new(GuestExecPipeData, 1);
+    GuestExecPipeData *pd = g_new0(GuestExecPipeData, 1);
 
     pd->chan = chan;
     pd->buffer = g_string_new("");
     pd->buffer_max = QGA_EXEC_BUFFER_MAX;
-    pd->err = NULL;
     pd->debug_id = debug_id;
     pd->done = false;
+#ifdef _WIN32
+    g_io_channel_win32_make_pollfd(chan,
+                                   G_IO_IN | G_IO_OUT | G_IO_HUP | G_IO_ERR,
+                                   &pd->pollfd);
+    g_io_channel_set_encoding(chan, NULL, NULL);
+    g_io_channel_set_buffered(chan, false);
+#endif
 
     return pd;
 }
@@ -384,7 +471,10 @@ static gboolean guest_exec_pipe_cb(GIOChannel *chan, GIOCondition condition,
     gchar buf[1024+1];
     gsize count = 0;
     GError *gerr = NULL;
-    GIOStatus gstatus;
+    GIOStatus gstatus = 0;
+#ifdef _WIN32
+    GIOCondition poll_condition = 0;
+#endif
 
 g_warning("cb called, debug_id: %d", pd->debug_id);
 g_warning("marker 0");
@@ -392,18 +482,41 @@ g_warning("marker 0");
         return false;
     }
 
-g_warning("marker 1");
-    if (pd->buffer->len >= pd->buffer_max) {
-        error_setg(&pd->err,
-                   "error reading pipe, %"PRId64" buffer size limit exceeded",
-                   pd->buffer_max);
+g_warning("marker 0a");
+g_warning("condition: %d", (int)condition);
+    if (!(condition & G_IO_IN)) {
+g_warning("closed channel" );
         goto out;
     }
 
+g_warning("marker 1");
+    if (pd->buffer->len >= pd->buffer_max) {
+g_warning("marker 1a");
+        error_setg(&pd->err,
+                   "error reading pipe, %"PRId64" buffer size limit exceeded",
+                   (int64_t)pd->buffer_max);
+        goto out;
+    }
+
+#ifdef _WIN32
+    if (g_io_channel_win32_poll(&pd->pollfd, 1, 0)) {
+        poll_condition = pd->pollfd.revents;
+    }
+    if (poll_condition & G_IO_IN) {
+        gstatus = g_io_channel_read_chars(pd->chan, buf,
+                                          MIN(pd->buffer_max - pd->buffer->len, 1024),
+                                          &count, &gerr);
+    }
+g_warning("marker 1a.win32, poll_condition: %d", (int)poll_condition);
+#else
+g_warning("marker 1b");
     gstatus = g_io_channel_read_chars(pd->chan, buf,
                                       MIN(pd->buffer_max - pd->buffer->len, 1024),
                                       &count, &gerr);
+#endif
+g_warning("marker 1c");
     if (gerr) {
+g_warning("marker 1d");
         error_setg(&pd->err, "error reading pipe: %s", gerr->message);
         g_error_free(gerr);
         goto out;
@@ -439,30 +552,114 @@ g_warning("exiting handler for debug_id: %d", pd->debug_id);
     return false;
 }
 
+typedef struct GuestExecTimerData {
+    bool timed_out;
+    GSource *stdout_source;
+    GSource *stderr_source;
+    int64_t handle;
+} GuestExecTimerData;
+
+static gboolean guest_exec_timer_cb(gpointer opaque)
+{
+    GuestExecTimerData *timer_data = opaque;
+    GuestExecInfo *gei = guest_exec_info_find(timer_data->handle);
+
+    g_warning("process timed out");
+    g_assert(gei);
+
+    timer_data->timed_out = true;
+
+    g_warning("closing process gpid: %d", (int)gei->gpid);
+#ifndef _WIN32
+    kill(gei->gpid, SIGKILL);
+#else
+    TerminateProcess(gei->gpid, -1);
+#endif
+
+    g_spawn_close_pid(gei->gpid);
+    g_warning("done");
+    g_source_destroy(timer_data->stdout_source);
+    g_source_destroy(timer_data->stderr_source);
+
+    return false;
+}
+
 static void guest_exec_buffer_output(int32_t handle, gchar **stdout_buf,
-                                     gchar **stderr_buf, Error **errp)
+                                     gchar **stderr_buf, int64_t timeout,
+                                     Error **errp)
 {
     GMainContext *ctx;
     GIOChannel *stdout_chan, *stderr_chan;
-    GSource *stdout_source, *stderr_source;
+    GSource *stdout_source, *stderr_source, *timer_source;
     GuestExecPipeData *stdout_pd, *stderr_pd;
     GuestExecInfo *gei = guest_exec_info_find(handle);
+    GError *gerr = NULL;
+    GuestExecTimerData timer_data = {
+        .timed_out = false,
+    };
 
+#ifndef _WIN32
     stdout_chan = g_io_channel_unix_new(gei->fd_out);
     stderr_chan = g_io_channel_unix_new(gei->fd_err);
+#else
+#include <sys/stat.h>
+    struct _stati64 st;
+    if (_fstati64(gei->fd_out, &st) == -1) {
+        g_warning("error stat()'ing stdout");
+    }
+    if (st.st_mode & _S_IFCHR) {
+        g_warning("w32: stdout is a console fd");
+    } else {
+        g_warning("w32: stdout not a console fd");
+    }
+    if (_fstati64(gei->fd_err, &st) == -1) {
+        g_warning("error stat()'ing stderr");
+    }
+    if (st.st_mode & _S_IFCHR) {
+        g_warning("w32: stderr is a console fd");
+    } else {
+        g_warning("w32: stderr not a console fd");
+    }
+    stdout_chan = g_io_channel_win32_new_fd(gei->fd_out);
+    stderr_chan = g_io_channel_win32_new_fd(gei->fd_err);
+#endif
+    /* TODO: shouldn't need this */
+    /* TODO: doesn't work? */
+    g_io_channel_set_flags(stdout_chan, G_IO_FLAG_NONBLOCK, &gerr);
+    if (gerr) {
+        g_warning("error setting non-blocking stdout for child");
+    }
+    g_io_channel_set_flags(stderr_chan, G_IO_FLAG_NONBLOCK, &gerr);
+    if (gerr) {
+        g_warning("error setting non-blocking stderr for child");
+    }
     ctx = g_main_context_new();
     //loop = g_main_loop_new(ctx, false);
 
     stdout_pd = guest_exec_pipe_data_new(stdout_chan, 100);
     stderr_pd = guest_exec_pipe_data_new(stderr_chan, 101);
-    stdout_source = g_io_create_watch(stdout_chan, G_IO_OUT | G_IO_ERR | G_IO_HUP);
-    stderr_source = g_io_create_watch(stderr_chan, G_IO_OUT | G_IO_ERR | G_IO_HUP);
+    stdout_source = g_io_create_watch(stdout_chan, G_IO_IN | G_IO_ERR | G_IO_HUP);
+    stderr_source = g_io_create_watch(stderr_chan, G_IO_IN | G_IO_ERR | G_IO_HUP);
+    timer_data.stdout_source = stdout_source;
+    timer_data.stderr_source = stderr_source;
+    timer_data.handle = handle;
     g_source_attach(stdout_source, ctx);
     g_source_attach(stderr_source, ctx);
     g_source_set_callback(stdout_source, (GSourceFunc)guest_exec_pipe_cb, stdout_pd, NULL);
     g_source_set_callback(stderr_source, (GSourceFunc)guest_exec_pipe_cb, stderr_pd, NULL);
 
+    if (timeout) {
+        timer_source = g_timeout_source_new(timeout);
+        g_source_attach(timer_source, ctx);
+        g_source_set_callback(timer_source, guest_exec_timer_cb, &timer_data, NULL);
+        g_source_set_priority(timer_source, G_PRIORITY_HIGH);
+    }
+
     while (!(stdout_pd->done && stderr_pd->done)) {
+        if (timer_data.timed_out) {
+            error_setg(errp, "process exceeded %"PRId64" ms timeout", timeout);
+            return;
+        }
         g_main_context_iteration(ctx, true);
     }
 
@@ -476,28 +673,20 @@ g_warning("dmarker 1");
     /* TODO: cleanup pipe data */
 }
 
-#ifdef QGA_DEBUG
-static void print_gei(GuestExecInfo *gei)
-{
-    g_print("gei->gpid: %d\n", gei->gpid);
-    g_print("gei->cmdline: %s\n", gei->cmdline);
-    g_print("gei->handle: %d\n", (int)gei->handle);
-    g_print("gei->fd_in: %d\n", gei->fd_in);
-    g_print("gei->fd_out: %d\n", gei->fd_out);
-    g_print("gei->fd_err: %d\n", gei->fd_err);
-}
-#endif
 
-GuestExecResponse *qmp_guest_exec(const char *cmdline, Error **errp)
+GuestExecResponse *qmp_guest_exec(const char *cmdline, bool has_timeout,
+                                  int64_t timeout, Error **errp)
 {
     int64_t handle;
     GuestExecInfo *gei;
     GuestExecStatus *ges;
     GuestExecResponse *ger;
     gchar *stdout_buf = NULL, *stderr_buf = NULL;
+    Error *local_err = NULL;
 
-    gei = guest_exec_spawn(cmdline, false, errp);
-    if (error_is_set(errp)) {
+    gei = guest_exec_spawn(cmdline, false, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
         return NULL;
     }
 
@@ -510,9 +699,22 @@ GuestExecResponse *qmp_guest_exec(const char *cmdline, Error **errp)
      * call blocking exec_status when eof on both handle, or timeout
      * occurs
      */
-    guest_exec_buffer_output(handle, &stdout_buf, &stderr_buf, errp);
+    guest_exec_buffer_output(handle, &stdout_buf, &stderr_buf,
+                             has_timeout ? timeout : 10000, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        local_err = NULL;
+    }
 
-    ges = qmp_guest_exec_status(handle, true, true, errp);
+    ges = qmp_guest_exec_status(handle, true, true, true, 1, &local_err);
+    if (local_err) {
+        if (error_is_set(errp)) {
+            error_free(local_err);
+        } else {
+            error_propagate(errp, local_err);
+        }
+    }
+
     if (error_is_set(errp)) {
         return NULL;
     }
@@ -533,6 +735,5 @@ GuestExecResponse *qmp_guest_exec(const char *cmdline, Error **errp)
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init_common(GAState *s, GACommandState *cs)
 {
-    ga_command_state_add(cs, guest_file_init, NULL);
     ga_command_state_add(cs, guest_exec_init, NULL);
 }
