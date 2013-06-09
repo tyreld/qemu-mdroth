@@ -151,6 +151,7 @@ int qemu_init_main_loop(void)
         return -1;
     }
 
+    iohandler_attach(qemu_qcontext);
     ret = qemu_signal_init();
     if (ret) {
         return ret;
@@ -456,9 +457,7 @@ int main_loop_wait(int nonblocking)
     slirp_update_timeout(&timeout);
     slirp_pollfds_fill(gpollfds);
 #endif
-    qemu_iohandler_fill(gpollfds);
     ret = os_host_main_loop_wait(timeout);
-    qemu_iohandler_poll(gpollfds, ret);
 #ifdef CONFIG_SLIRP
     slirp_pollfds_poll(gpollfds, (ret < 0));
 #endif

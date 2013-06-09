@@ -41,68 +41,29 @@ typedef struct IOHandlerRecord {
     int fd;
     int pollfds_idx;
     bool deleted;
+    GPollFD pfd;
+    bool pfd_added;
 } IOHandlerRecord;
 
-static QLIST_HEAD(, IOHandlerRecord) io_handlers =
-    QLIST_HEAD_INITIALIZER(io_handlers);
+typedef struct IOHandlerSource {
+    GSource source;
+    QLIST_HEAD(, IOHandlerRecord) io_handlers;
+    QemuMutex mutex;
+} IOHandlerSource;
 
-
-/* XXX: fd_read_poll should be suppressed, but an API change is
-   necessary in the character devices to suppress fd_can_read(). */
-int qemu_set_fd_handler2(int fd,
-                         IOCanReadHandler *fd_read_poll,
-                         IOHandler *fd_read,
-                         IOHandler *fd_write,
-                         void *opaque)
+static gboolean iohandler_prepare(GSource *source, gint *timeout)
 {
+    IOHandlerSource *s = (IOHandlerSource *)source;
     IOHandlerRecord *ioh;
 
-    assert(fd >= 0);
+    qemu_mutex_lock(&s->mutex);
 
-    if (!fd_read && !fd_write) {
-        QLIST_FOREACH(ioh, &io_handlers, next) {
-            if (ioh->fd == fd) {
-                ioh->deleted = 1;
-                break;
-            }
-        }
-    } else {
-        QLIST_FOREACH(ioh, &io_handlers, next) {
-            if (ioh->fd == fd)
-                goto found;
-        }
-        ioh = g_malloc0(sizeof(IOHandlerRecord));
-        QLIST_INSERT_HEAD(&io_handlers, ioh, next);
-    found:
-        ioh->fd = fd;
-        ioh->fd_read_poll = fd_read_poll;
-        ioh->fd_read = fd_read;
-        ioh->fd_write = fd_write;
-        ioh->opaque = opaque;
-        ioh->pollfds_idx = -1;
-        ioh->deleted = 0;
-        qemu_notify_event();
-    }
-    return 0;
-}
-
-int qemu_set_fd_handler(int fd,
-                        IOHandler *fd_read,
-                        IOHandler *fd_write,
-                        void *opaque)
-{
-    return qemu_set_fd_handler2(fd, NULL, fd_read, fd_write, opaque);
-}
-
-void qemu_iohandler_fill(GArray *pollfds)
-{
-    IOHandlerRecord *ioh;
-
-    QLIST_FOREACH(ioh, &io_handlers, next) {
+    QLIST_FOREACH(ioh, &s->io_handlers, next) {
         int events = 0;
 
         if (ioh->deleted)
             continue;
+
         if (ioh->fd_read &&
             (!ioh->fd_read_poll ||
              ioh->fd_read_poll(ioh->opaque) != 0)) {
@@ -112,48 +73,200 @@ void qemu_iohandler_fill(GArray *pollfds)
             events |= G_IO_OUT | G_IO_ERR;
         }
         if (events) {
-            GPollFD pfd = {
-                .fd = ioh->fd,
-                .events = events,
-            };
-            ioh->pollfds_idx = pollfds->len;
-            g_array_append_val(pollfds, pfd);
+            ioh->pfd.fd = ioh->fd;
+            ioh->pfd.events = events;
+            if (!ioh->pfd_added) {
+                g_source_add_poll(source, &ioh->pfd);
+                ioh->pfd_added = true;
+            }
         } else {
-            ioh->pollfds_idx = -1;
+            ioh->pfd.events = 0;
+            ioh->pfd.revents = 0;
         }
     }
+
+    qemu_mutex_unlock(&s->mutex);
+
+    *timeout = 10;
+    return false;
 }
 
-void qemu_iohandler_poll(GArray *pollfds, int ret)
+static gboolean iohandler_check(GSource *source)
 {
-    if (ret > 0) {
-        IOHandlerRecord *pioh, *ioh;
+    IOHandlerSource *s = (IOHandlerSource *)source;
+    IOHandlerRecord *ioh;
 
-        QLIST_FOREACH_SAFE(ioh, &io_handlers, next, pioh) {
-            int revents = 0;
+    qemu_mutex_lock(&s->mutex);
 
-            if (!ioh->deleted && ioh->pollfds_idx != -1) {
-                GPollFD *pfd = &g_array_index(pollfds, GPollFD,
-                                              ioh->pollfds_idx);
-                revents = pfd->revents;
-            }
-
-            if (!ioh->deleted && ioh->fd_read &&
-                (revents & (G_IO_IN | G_IO_HUP | G_IO_ERR))) {
-                ioh->fd_read(ioh->opaque);
-            }
-            if (!ioh->deleted && ioh->fd_write &&
-                (revents & (G_IO_OUT | G_IO_ERR))) {
-                ioh->fd_write(ioh->opaque);
-            }
-
-            /* Do this last in case read/write handlers marked it for deletion */
-            if (ioh->deleted) {
-                QLIST_REMOVE(ioh, next);
-                g_free(ioh);
-            }
+    QLIST_FOREACH(ioh, &s->io_handlers, next) {
+        if (ioh->deleted) {
+            continue;
+        }
+        if (ioh->pfd.revents) {
+            return true;
         }
     }
+
+    qemu_mutex_unlock(&s->mutex);
+
+    return false;
+}
+
+static gboolean iohandler_dispatch(GSource *source, GSourceFunc cb,
+                                   gpointer user_data)
+{
+    IOHandlerSource *s = (IOHandlerSource *)source;
+    IOHandlerRecord *pioh, *ioh;
+
+
+    qemu_mutex_lock(&s->mutex);
+
+    QLIST_FOREACH_SAFE(ioh, &s->io_handlers, next, pioh) {
+        int revents = ioh->pfd.revents;
+        if (!ioh->deleted && ioh->fd_read &&
+            (revents && (G_IO_IN | G_IO_HUP | G_IO_ERR))) {
+            ioh->fd_read(ioh->opaque);
+        }
+
+        if (!ioh->deleted && ioh->fd_write &&
+            (revents & (G_IO_OUT | G_IO_ERR))) {
+            ioh->fd_write(ioh->opaque);
+        }
+
+        /* Do this last in case read/write handlers marked it for deletion */
+        if (ioh->deleted) {
+            if (ioh->pfd_added) {
+                g_source_remove_poll(source, &ioh->pfd);
+            }
+            QLIST_REMOVE(ioh, next);
+            g_free(ioh);
+        }
+    }
+
+    qemu_mutex_unlock(&s->mutex);
+
+    return true;
+}
+
+static void iohandler_finalize(GSource *source)
+{
+    IOHandlerSource *s = (IOHandlerSource *)source;
+    IOHandlerRecord *pioh, *ioh;
+
+    qemu_mutex_lock(&s->mutex);
+
+    QLIST_FOREACH_SAFE(ioh, &s->io_handlers, next, pioh) {
+        if (ioh->pfd_added) {
+            g_source_remove_poll(source, &ioh->pfd);
+        }
+        QLIST_REMOVE(ioh, next);
+        g_free(ioh);
+    }
+
+    qemu_mutex_unlock(&s->mutex);
+
+    g_free(s);
+}
+
+static GSourceFuncs iohandler_source_funcs = {
+    iohandler_prepare,
+    iohandler_check,
+    iohandler_dispatch,
+    iohandler_finalize,
+};
+
+void iohandler_attach(QContext *ctx)
+{
+    GSource *gs = g_source_new(&iohandler_source_funcs,
+                               sizeof(IOHandlerSource));
+    IOHandlerSource *s = (IOHandlerSource *)gs;
+
+    QLIST_INIT(&s->io_handlers);
+    qemu_mutex_init_recursive(&s->mutex);
+
+    qcontext_attach_source(ctx, gs, SOURCE_TYPE_IOHANDLER);
+}
+
+int set_fd_handler2(QContext *ctx,
+                    int fd,
+                    IOCanReadHandler *fd_read_poll,
+                    IOHandler *fd_read,
+                    IOHandler *fd_write,
+                    void *opaque)
+{
+    GSource *source;
+    IOHandlerSource *s;
+    IOHandlerRecord *ioh;
+
+    source = qcontext_find_source_by_name(ctx, SOURCE_TYPE_IOHANDLER);
+    if (!source) {
+        assert(0);
+    }
+    s = (IOHandlerSource *)source;
+
+    assert(fd >= 0);
+
+    qemu_mutex_lock(&s->mutex);
+
+    if (!fd_read && !fd_write) {
+        QLIST_FOREACH(ioh, &s->io_handlers, next) {
+            if (ioh->fd == fd) {
+                ioh->deleted = 1;
+                break;
+            }
+        }
+    } else {
+        QLIST_FOREACH(ioh, &s->io_handlers, next) {
+            if (ioh->fd == fd)
+                goto found;
+        }
+        ioh = g_malloc0(sizeof(IOHandlerRecord));
+        QLIST_INSERT_HEAD(&s->io_handlers, ioh, next);
+    found:
+        ioh->fd = fd;
+        ioh->fd_read_poll = fd_read_poll;
+        ioh->fd_read = fd_read;
+        ioh->fd_write = fd_write;
+        ioh->opaque = opaque;
+        ioh->pollfds_idx = -1;
+        ioh->deleted = 0;
+
+        g_main_context_wakeup(qcontext_get_context(ctx));
+    }
+
+    qemu_mutex_unlock(&s->mutex);
+
+    return 0;
+}
+
+int set_fd_handler(QContext *ctx,
+                   int fd,
+                   IOHandler *fd_read,
+                   IOHandler *fd_write,
+                   void *opaque)
+{
+    return set_fd_handler2(ctx, fd, NULL, fd_read, fd_write, opaque);
+}
+
+/* XXX: fd_read_poll should be suppressed, but an API change is
+   necessary in the character devices to suppress fd_can_read(). */
+int qemu_set_fd_handler2(int fd,
+                         IOCanReadHandler *fd_read_poll,
+                         IOHandler *fd_read,
+                         IOHandler *fd_write,
+                         void *opaque)
+{
+    return set_fd_handler2(qemu_get_qcontext(), fd,
+                           fd_read_poll, fd_read, fd_write,
+                           opaque);
+}
+
+int qemu_set_fd_handler(int fd,
+                        IOHandler *fd_read,
+                        IOHandler *fd_write,
+                        void *opaque)
+{
+    return qemu_set_fd_handler2(fd, NULL, fd_read, fd_write, opaque);
 }
 
 /* reaping of zombies.  right now we're not passing the status to
