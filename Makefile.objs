@@ -1,7 +1,7 @@
 #######################################################################
 # Common libraries for tools and emulators
 stub-obj-y = stubs/
-util-obj-y = util/ qobject/ qapi/ trace/
+util-obj-y = util/ qobject/ qapi/ trace/ qom/
 
 #######################################################################
 # block-obj-y is code used by both qemu system emulation and qemu-img
@@ -103,6 +103,10 @@ common-obj-y += disas/
 # FIXME: a few definitions from qapi-types.o/qapi-visit.o are needed
 # by libqemuutil.a.  These should be moved to a separate .json schema.
 qga-obj-y = qga/ qapi-types.o qapi-visit.o
+
+######################################################################
+# qom
+qom-obj-y = qom/ qobject
 
 vl.o: QEMU_CFLAGS+=$(GPROF_CFLAGS)
 
