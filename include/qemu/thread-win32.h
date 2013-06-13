@@ -5,6 +5,8 @@
 struct QemuMutex {
     CRITICAL_SECTION lock;
     LONG owner;
+    BOOL recursive;
+    int recursion_depth;
 };
 
 struct QemuCond {

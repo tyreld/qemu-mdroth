@@ -33,6 +33,13 @@ void qemu_mutex_init(QemuMutex *mutex)
     InitializeCriticalSection(&mutex->lock);
 }
 
+void qemu_mutex_init_recursive(QemuMutex *mutex)
+{
+    qemu_mutex_init(mutex);
+    mutex->recursive = TRUE;
+    mutex->recursion_depth = 0;
+}
+
 void qemu_mutex_destroy(QemuMutex *mutex)
 {
     assert(mutex->owner == 0);
@@ -44,9 +51,14 @@ void qemu_mutex_lock(QemuMutex *mutex)
     EnterCriticalSection(&mutex->lock);
 
     /* Win32 CRITICAL_SECTIONs are recursive.  Assert that we're not
-     * using them as such.
+     * using them as such unless we explicitly initialized it
+     * as being recursive.
      */
-    assert(mutex->owner == 0);
+    if (mutex->recursive) {
+        mutex->recursion_depth++;
+    } else {
+        assert(mutex->owner == 0);
+    }
     mutex->owner = GetCurrentThreadId();
 }
 
@@ -56,7 +68,11 @@ int qemu_mutex_trylock(QemuMutex *mutex)
 
     owned = TryEnterCriticalSection(&mutex->lock);
     if (owned) {
-        assert(mutex->owner == 0);
+        if (mutex->recursive) {
+            mutex->recursion_depth++;
+        } else {
+            assert(mutex->owner == 0);
+        }
         mutex->owner = GetCurrentThreadId();
     }
     return !owned;
@@ -65,7 +81,9 @@ int qemu_mutex_trylock(QemuMutex *mutex)
 void qemu_mutex_unlock(QemuMutex *mutex)
 {
     assert(mutex->owner == GetCurrentThreadId());
-    mutex->owner = 0;
+    if (!mutex->recursive || --mutex->recursion_depth == 0) {
+        mutex->owner = 0;
+    }
     LeaveCriticalSection(&mutex->lock);
 }
 

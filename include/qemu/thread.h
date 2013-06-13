@@ -19,6 +19,7 @@ typedef struct QemuThread QemuThread;
 #define QEMU_THREAD_DETACHED 1
 
 void qemu_mutex_init(QemuMutex *mutex);
+void qemu_mutex_init_recursive(QemuMutex *mutex);
 void qemu_mutex_destroy(QemuMutex *mutex);
 void qemu_mutex_lock(QemuMutex *mutex);
 int qemu_mutex_trylock(QemuMutex *mutex);
