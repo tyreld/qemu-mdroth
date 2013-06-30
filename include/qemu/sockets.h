@@ -9,7 +9,8 @@
 
 #define socket_error() WSAGetLastError()
 #define QEMU_SOCKET_RC_INPROGRESS(rc) \
-    ((rc) == -EINPROGRESS || (rc) == -EWOULDBLOCK || (rc) == -WSAEALREADY)
+    ((rc) == -EINPROGRESS || (rc) == -EWOULDBLOCK || (rc) == -WSAEALREADY || \
+     (rc) == -WSAEWOULDBLOCK)
 
 int inet_aton(const char *cp, struct in_addr *ia);
 
