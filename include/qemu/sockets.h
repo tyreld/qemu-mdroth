@@ -8,6 +8,8 @@
 #include <ws2tcpip.h>
 
 #define socket_error() WSAGetLastError()
+#define QEMU_SOCKET_RC_INPROGRESS(rc) \
+    ((rc) == -EINPROGRESS || (rc) == -EWOULDBLOCK || (rc) == -WSAEALREADY)
 
 int inet_aton(const char *cp, struct in_addr *ia);
 
@@ -23,6 +25,8 @@ int inet_aton(const char *cp, struct in_addr *ia);
 
 #define socket_error() errno
 #define closesocket(s) close(s)
+#define QEMU_SOCKET_RC_INPROGRESS(rc) \
+    ((rc) == -EINPROGRESS)
 
 #endif /* !_WIN32 */
 

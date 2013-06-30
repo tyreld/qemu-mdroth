@@ -198,14 +198,6 @@ listen:
     return slisten;
 }
 
-#ifdef _WIN32
-#define QEMU_SOCKET_RC_INPROGRESS(rc) \
-    ((rc) == -EINPROGRESS || (rc) == -EWOULDBLOCK || (rc) == -WSAEALREADY)
-#else
-#define QEMU_SOCKET_RC_INPROGRESS(rc) \
-    ((rc) == -EINPROGRESS)
-#endif
-
 /* Struct to store connect state for non blocking connect */
 typedef struct ConnectState {
     int fd;
