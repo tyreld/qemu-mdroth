@@ -47,6 +47,7 @@ static QLIST_HEAD(, IOHandlerRecord) io_handlers =
     QLIST_HEAD_INITIALIZER(io_handlers);
 
 
+#ifndef _WIN32
 /* XXX: fd_read_poll should be suppressed, but an API change is
    necessary in the character devices to suppress fd_can_read(). */
 int qemu_set_fd_handler2(int fd,
@@ -85,6 +86,246 @@ int qemu_set_fd_handler2(int fd,
     }
     return 0;
 }
+#else
+
+typedef struct SocketHandler {
+    GSource source;
+    QemuMutex mutex;
+    int fd;
+    HANDLE event;
+    WSANETWORKEVENTS network_events;
+    long network_events_mask;
+    IOCanReadHandler *read_poll;
+    IOHandler *read;
+    IOHandler *write;
+    void *opaque;
+    GPollFD pfd;
+    bool pfd_added;
+    bool writeable; /* we only get FD_WRITE once, so capture it */
+    bool deleted;
+    bool read_deferred;
+} SocketHandler;
+
+static gboolean socket_handler_prepare(GSource *source, gint *timeout)
+{
+    SocketHandler *socket_handler = (SocketHandler *)source;
+    socket_handler->pfd.events = 0;
+
+    WSAEventSelect(socket_handler->fd, socket_handler->event,
+                   socket_handler->network_events_mask);
+    /* TODO: does this reset events already set? */
+#if 0
+    WSAEventSelect(socket_handler->fd, socket_handler->event,
+                   socket_handler->network_events_mask);
+#endif
+
+    /* XXX: glib only sets G_IO_IN for event handles */
+    if (socket_handler->network_events.lNetworkEvents & (FD_READ | FD_ACCEPT)) {
+        socket_handler->pfd.events |= G_IO_IN | G_IO_HUP | G_IO_ERR;
+    }
+
+    if (socket_handler->network_events.lNetworkEvents & (FD_WRITE | FD_CONNECT | FD_OOB)) {
+        socket_handler->pfd.events |= G_IO_OUT | G_IO_HUP | G_IO_ERR;
+    }
+
+    if (!socket_handler->pfd_added) {
+        /* TODO: fix this cast */
+        socket_handler->pfd.fd = (gint)socket_handler->event;
+        socket_handler->pfd.revents = 0;
+        g_source_add_poll(source, &socket_handler->pfd);
+        socket_handler->pfd_added = true;
+    }
+
+    if (socket_handler->read_deferred) {
+        return true;
+    }
+
+    return false;
+}
+
+static gboolean socket_handler_check(GSource *source)
+{
+    SocketHandler *socket_handler = (SocketHandler *)source;
+    int ret;
+
+#if 0
+    if ((socket_handler->pfd.events & socket_handler->pfd.revents) == 0) {
+        return false;
+    }
+#endif
+    if (socket_handler->deleted) {
+        return false;
+    }
+
+    ret = WSAEnumNetworkEvents(socket_handler->fd, socket_handler->event,
+                               &socket_handler->network_events);
+    if (ret) {
+        /* TODO: check for WSAEINPROGRESS */
+        g_warning("socket_handler error");
+        return false;
+    }
+
+    /* FIXME: this may break if they remove write handler and re-add later,
+     * as we may 'lose' the FD_WRITE and never trigger again. we should
+     * probably just poll if FD_WRITE is set
+     */
+    //if (socket_handler->network_events_mask & FD_WRITE) {
+#if 0
+    if (socket_handler->write) {
+        socket_handler->writeable = true;
+        return true;
+        if (!socket_handler->writeable) {
+            if (socket_handler->network_events.lNetworkEvents & FD_WRITE) {
+                socket_handler->writeable = true;
+            }
+        }
+        if (socket_handler->writeable) {
+            return true;
+        }
+    }
+#endif
+
+    return socket_handler->network_events.lNetworkEvents &
+           socket_handler->network_events_mask;
+}
+
+static gboolean socket_handler_dispatch(GSource *source, GSourceFunc cb,
+                                        gpointer user_data)
+{
+    SocketHandler *socket_handler = (SocketHandler *)source;
+    gushort revents = socket_handler->pfd.revents;
+    gboolean dispatched = false;
+    long network_events_active;
+
+    socket_handler->pfd.revents = 0;
+
+    if (socket_handler->deleted) {
+        return false;
+    }
+
+    network_events_active = socket_handler->network_events.lNetworkEvents;
+
+    /* TODO: should we suppress any of these? what about OOB/HUP/etc? */
+    if (socket_handler->read &&
+        ((network_events_active & (FD_READ | FD_ACCEPT)) || socket_handler->read_deferred)) {
+        if (!socket_handler->read_poll ||
+            socket_handler->read_poll(socket_handler->opaque)) {
+            socket_handler->read(socket_handler->opaque);
+            dispatched = true;
+            socket_handler->read_deferred = false;
+        } else {
+            /* TODO: why are we not getting FD_READ again after a
+             * read_poll fail???
+             */
+            /*
+            WSAEventSelect(socket_handler->fd, socket_handler->event,
+                           socket_handler->network_events_mask);
+                           */
+            socket_handler->read_deferred = true;
+            dispatched = true;
+        }
+    }
+
+    if (socket_handler->write &&
+        (network_events_active & (FD_WRITE | FD_CONNECT))) {
+        socket_handler->write(socket_handler->opaque);
+        dispatched = true;
+    }
+#if 0
+    if (socket_handler->write && socket_handler->writeable) {
+        socket_handler->write(socket_handler->opaque);
+        dispatched = true;
+    }
+#endif
+
+    return dispatched;
+}
+
+static void socket_handler_finalize(GSource *source)
+{
+    SocketHandler *socket_handler = (SocketHandler *)source;
+
+    if (socket_handler->pfd_added) {
+        g_source_remove_poll(source, &socket_handler->pfd);
+    }
+    WSACloseEvent(socket_handler->event);
+}
+
+static GSourceFuncs socket_handler_funcs = {
+    socket_handler_prepare,
+    socket_handler_check,
+    socket_handler_dispatch,
+    socket_handler_finalize
+};
+
+int qemu_set_fd_handler2(int fd,
+                         IOCanReadHandler *fd_read_poll,
+                         IOHandler *fd_read,
+                         IOHandler *fd_write,
+                         void *opaque)
+{
+    GSource *source;
+    SocketHandler *socket_handler;
+    GMainContext *ctx = g_main_context_default();
+    long network_events_mask = 0;
+    bool deleted = false;
+
+    if (fd_read) {
+        /* TODO: double-check these */
+        //network_events_mask |= FD_READ | FD_ACCEPT | FD_CLOSE;
+        network_events_mask |= FD_READ | FD_ACCEPT | FD_CLOSE | FD_CONNECT | FD_OOB;
+    }
+
+    if (fd_write) {
+        /* TODO: double-check these */
+        //network_events_mask |= FD_WRITE | FD_CONNECT | FD_OOB;
+        network_events_mask |= FD_WRITE | FD_CONNECT | FD_OOB | FD_ACCEPT;
+    }
+
+    if (!network_events_mask && !fd_read_poll) {
+        deleted = true;
+    }
+
+    source = g_main_context_find_source_by_funcs_user_data(
+                ctx, &socket_handler_funcs, (gpointer)fd);
+    socket_handler = (SocketHandler *)source;
+
+    if (deleted) {
+        if (source) {
+            /* FIXME: need to finalize/unref at some point, have
+             * intermittent segfaults if we unref while in dispatch
+             */
+            //g_source_unref(source);
+            socket_handler->deleted = true;
+            g_source_destroy(source);
+        }
+        return 0;
+    }
+
+    if (!source) {
+        source = g_source_new(&socket_handler_funcs, sizeof(SocketHandler));
+        socket_handler = (SocketHandler *)source;
+        socket_handler->fd = fd;
+        socket_handler->event = WSACreateEvent();
+        qemu_mutex_init(&socket_handler->mutex);
+        /* XXX: thread-safe to modify after attach? */
+        g_source_attach(source, ctx);
+        g_source_set_callback(source, NULL, (gpointer)fd, NULL);
+    }
+
+    socket_handler->read_poll =  fd_read_poll;
+    socket_handler->read = fd_read;
+    socket_handler->write = fd_write;
+    socket_handler->opaque = opaque;
+    socket_handler->network_events_mask = network_events_mask;
+    WSAEventSelect(socket_handler->fd, socket_handler->event,
+                   socket_handler->network_events_mask);
+    //SetEvent(socket_handler->event);
+    g_main_context_wakeup(ctx);
+
+    return 0;
+}
+#endif
 
 int qemu_set_fd_handler(int fd,
                         IOHandler *fd_read,
