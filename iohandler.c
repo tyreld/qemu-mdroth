@@ -90,6 +90,7 @@ int qemu_set_fd_handler2(int fd,
 
 typedef struct SocketHandler {
     GSource source;
+    QemuMutex mutex;
     int fd;
     HANDLE event;
     WSANETWORKEVENTS network_events;
@@ -254,6 +255,7 @@ int qemu_set_fd_handler2(int fd,
         socket_handler = (SocketHandler *)source;
         socket_handler->fd = fd;
         socket_handler->event = WSACreateEvent();
+        qemu_mutex_init(&socket_handler->mutex);
         /* XXX: thread-safe to modify after attach? */
         g_source_attach(source, ctx);
         g_source_set_callback(source, NULL, (gpointer)fd, NULL);
