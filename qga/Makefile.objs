@@ -3,3 +3,7 @@ qga-obj-$(CONFIG_POSIX) += commands-posix.o channel-posix.o
 qga-obj-$(CONFIG_WIN32) += commands-win32.o channel-win32.o service-win32.o
 qga-obj-y += qapi-generated/qga-qapi-types.o qapi-generated/qga-qapi-visit.o
 qga-obj-y += qapi-generated/qga-qmp-marshal.o
+
+ifeq ($(CONFIG_QGA_VSS),y)
+qga-vss-dll-obj-y += vss-win32/
+endif

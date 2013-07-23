@@ -3531,9 +3531,12 @@ if test "$softmmu" = yes ; then
       virtfs=no
     fi
   fi
-  if [ "$linux" = "yes" -o "$bsd" = "yes" -o "$solaris" = "yes" ] ; then
+  if [ "$linux" = "yes" -o "$bsd" = "yes" -o "$solaris" = "yes" -o "$mingw32" = "yes" ] ; then
     if [ "$guest_agent" = "yes" ]; then
       tools="qemu-ga\$(EXESUF) $tools"
+      if [ "$mingw32" = "yes" ]; then
+        tools="qga/vss-win32-provider/qga-provider.dll qga/vss-win32-provider/qga-provider.tlb $tools"
+      fi
     fi
   fi
 fi
