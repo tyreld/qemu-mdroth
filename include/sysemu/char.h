@@ -77,6 +77,7 @@ struct CharDriverState {
     int explicit_fe_open;
     int explicit_be_open;
     int avail_connections;
+    int is_mux;
     QemuOpts *opts;
     QTAILQ_ENTRY(CharDriverState) next;
 };
@@ -277,6 +278,21 @@ int qemu_chr_add_client(CharDriverState *s, int fd);
 void qemu_chr_info_print(Monitor *mon, const QObject *ret_data);
 void qemu_chr_info(Monitor *mon, QObject **ret_data);
 CharDriverState *qemu_chr_find(const char *name);
+
+/**
+ * @qemu_chr_mux_realize
+ *
+ * Called after processing of default and command-line-specified
+ * chardevs to deliver CHR_EVENT_OPENED events to any FEs attached
+ * to a mux chardev. This is done here to ensure that
+ * output/prompts/banners are only displayed for the FE that has
+ * focus when initial command-line processing/machine init is
+ * completed.
+ *
+ * After this point, any new FE attached to a mux will receive
+ * CHR_EVENT_OPENED notifications for the BE immediately.
+ */
+void qemu_chr_mux_realize(void);
 
 QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename);
 

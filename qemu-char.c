@@ -492,6 +492,8 @@ static CharDriverState *qemu_chr_open_mux(CharDriverState *drv)
     chr->chr_accept_input = mux_chr_accept_input;
     /* Frontend guest-open / -close notification is not support with muxes */
     chr->chr_set_fe_open = NULL;
+    chr->explicit_be_open = 1;
+    chr->is_mux = 1;
 
     return chr;
 }
@@ -3410,6 +3412,27 @@ CharDriverState *qemu_chr_find(const char *name)
         return chr;
     }
     return NULL;
+}
+
+void qemu_chr_mux_realize(void)
+{
+    CharDriverState *chr;
+
+    QTAILQ_FOREACH(chr, &chardevs, next) {
+        if (chr->is_mux) {
+            MuxDriver *d = chr->opaque;
+            int i;
+
+            /* send OPENED to all already-attached FEs */
+            for (i = 0; i < d->mux_cnt; i++) {
+                mux_chr_send_event(d, i, CHR_EVENT_OPENED);
+            }
+            /* mark mux as OPENED so any new FEs will immediately receive
+             * OPENED event
+             */
+            qemu_chr_be_generic_open(chr);
+        }
+    }
 }
 
 /* Get a character (serial) device interface.  */
