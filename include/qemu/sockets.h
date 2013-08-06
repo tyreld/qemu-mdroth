@@ -11,6 +11,9 @@
 #define QEMU_SOCKET_RC_INPROGRESS(rc) \
     ((rc) == -EINPROGRESS || (rc) == -EWOULDBLOCK || (rc) == -WSAEALREADY || \
      (rc) == -WSAEWOULDBLOCK)
+#define QEMU_SOCKET_RC_WOULDBLOCK(rc) \
+    ((rc) == -WSAWOULDBLOCK)
+
 
 int inet_aton(const char *cp, struct in_addr *ia);
 
@@ -28,6 +31,8 @@ int inet_aton(const char *cp, struct in_addr *ia);
 #define closesocket(s) close(s)
 #define QEMU_SOCKET_RC_INPROGRESS(rc) \
     ((rc) == -EINPROGRESS)
+#define QEMU_SOCKET_RC_WOULDBLOCK(rc) \
+    ((rc) == -EWOULDBLOCK || (rc) == -EAGAIN)
 
 #endif /* !_WIN32 */
 
