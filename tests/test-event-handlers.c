@@ -95,8 +95,13 @@ static void *main_loop_threadfn(void *opaque)
             main_loop_unlock(l);
             break;
         }
+        if (!l->global_mutex) {
+            main_loop_unlock(l);
+        }
         main_loop_wait(l->blocking);
-        main_loop_unlock(l);
+        if (l->global_mutex) {
+            main_loop_unlock(l);
+        }
     }
 
     return NULL;
@@ -119,13 +124,13 @@ static void main_loop_start(MainLoop *l)
 
 static void main_loop_stop(MainLoop *l)
 {
+    l->run = false;
+    qemu_notify_event();
     main_loop_lock(l);
     if (l->joined) {
         main_loop_unlock(l);
         return;
     }
-    l->run = false;
-    qemu_notify_event();
     main_loop_unlock(l);
 
     qemu_thread_join(&l->thread);
@@ -147,7 +152,7 @@ static MainLoop *main_loop_new(bool blocking, bool global_mutex)
     qemu_cond_init(&l->joined_cond);
     qemu_mutex_init(&l->mutex);
     clear_events(WAIT_TIMEOUT);
-    if (global_mutex) {
+    if (l->global_mutex) {
         qemu_main_loop = l;
     }
 
@@ -831,6 +836,18 @@ static void test_socket_connect_main_loop_nonblocking(void)
 {
     test_socket_connect_helper(false);
 }
+
+#if 0
+static void test_socket_connect_main_loop_blocking_nonglobal(void)
+{
+    test_socket_connect_helper(true, false);
+}
+
+static void test_socket_connect_main_loop_nonblocking_nonglobal(void)
+{
+    test_socket_connect_helper(false, false);
+}
+#endif
 
 static void test_socket_server_read(bool main_loop_blocking)
 {
