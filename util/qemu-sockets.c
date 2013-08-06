@@ -147,6 +147,7 @@ int inet_listen_opts(QemuOpts *opts, int port_offset, Error **errp)
         getnameinfo((struct sockaddr*)e->ai_addr,e->ai_addrlen,
 		        uaddr,INET6_ADDRSTRLEN,uport,32,
 		        NI_NUMERICHOST | NI_NUMERICSERV);
+reopen_socket:
         slisten = qemu_socket(e->ai_family, e->ai_socktype, e->ai_protocol);
         if (slisten < 0) {
             if (!e->ai_next) {
@@ -169,7 +170,23 @@ int inet_listen_opts(QemuOpts *opts, int port_offset, Error **errp)
         for (p = port_min; p <= port_max; p++) {
             inet_setport(e, p);
             if (bind(slisten, e->ai_addr, e->ai_addrlen) == 0) {
-                goto listen;
+                if (listen(slisten, 1) == 0) {
+                    snprintf(uport, sizeof(uport), "%d", inet_getport(e) - port_offset);
+                    qemu_opt_set(opts, "host", uaddr);
+                    qemu_opt_set(opts, "port", uport);
+                    qemu_opt_set(opts, "ipv6", (e->ai_family == PF_INET6) ? "on" : "off");
+                    qemu_opt_set(opts, "ipv4", (e->ai_family != PF_INET6) ? "on" : "off");
+                    freeaddrinfo(res);
+                    return slisten;
+                }
+                if (p == port_max) {
+                    if (!e->ai_next) {
+                        error_set_errno(errp, errno, QERR_SOCKET_LISTEN_FAILED);
+                        break;
+                    }
+                }
+                closesocket(slisten);
+                goto reopen_socket;
             }
             if (p == port_max) {
                 if (!e->ai_next) {
@@ -179,23 +196,9 @@ int inet_listen_opts(QemuOpts *opts, int port_offset, Error **errp)
         }
         closesocket(slisten);
     }
+
     freeaddrinfo(res);
     return -1;
-
-listen:
-    if (listen(slisten,1) != 0) {
-        error_set_errno(errp, errno, QERR_SOCKET_LISTEN_FAILED);
-        closesocket(slisten);
-        freeaddrinfo(res);
-        return -1;
-    }
-    snprintf(uport, sizeof(uport), "%d", inet_getport(e) - port_offset);
-    qemu_opt_set(opts, "host", uaddr);
-    qemu_opt_set(opts, "port", uport);
-    qemu_opt_set(opts, "ipv6", (e->ai_family == PF_INET6) ? "on" : "off");
-    qemu_opt_set(opts, "ipv4", (e->ai_family != PF_INET6) ? "on" : "off");
-    freeaddrinfo(res);
-    return slisten;
 }
 
 /* Struct to store connect state for non blocking connect */
