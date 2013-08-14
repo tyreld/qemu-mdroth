@@ -136,6 +136,8 @@ int qemu_init_main_loop(void)
         exit(1);
     }
 
+    fd_source_attach(g_main_context_default());
+
     ret = qemu_signal_init();
     if (ret) {
         return ret;
@@ -161,6 +163,7 @@ static void glib_pollfds_fill(uint32_t *cur_timeout)
     int timeout = 0;
     int n;
 
+    g_assert(g_main_context_acquire(context));
     g_main_context_prepare(context, &max_priority);
 
     glib_pollfds_idx = gpollfds->len;
@@ -177,6 +180,7 @@ static void glib_pollfds_fill(uint32_t *cur_timeout)
     if (timeout >= 0 && timeout < *cur_timeout) {
         *cur_timeout = timeout;
     }
+    g_main_context_release(context);
 }
 
 static void glib_pollfds_poll(void)
@@ -184,9 +188,11 @@ static void glib_pollfds_poll(void)
     GMainContext *context = g_main_context_default();
     GPollFD *pfds = &g_array_index(gpollfds, GPollFD, glib_pollfds_idx);
 
+    g_assert(g_main_context_acquire(context));
     if (g_main_context_check(context, max_priority, pfds, glib_n_poll_fds)) {
         g_main_context_dispatch(context);
     }
+    g_main_context_release(context);
 }
 
 #define MAX_MAIN_LOOP_SPIN (1000)
@@ -397,9 +403,7 @@ int main_loop_wait(int nonblocking)
     slirp_update_timeout(&timeout);
     slirp_pollfds_fill(gpollfds);
 #endif
-    qemu_iohandler_fill(gpollfds);
     ret = os_host_main_loop_wait(timeout);
-    qemu_iohandler_poll(gpollfds, ret);
 #ifdef CONFIG_SLIRP
     slirp_pollfds_poll(gpollfds, (ret < 0));
 #endif
