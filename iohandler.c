@@ -42,6 +42,11 @@ typedef struct IOHandlerRecord {
     QLIST_ENTRY(IOHandlerRecord) next;
     GPollFD pfd;
     bool deleted;
+#ifdef _WIN32
+    int fd;
+    int wsa_events;
+    int wsa_event_mask;
+#endif
 } IOHandlerRecord;
 
 typedef struct FDSource {
@@ -165,6 +170,12 @@ static GSourceFuncs fd_source_funcs = {
     fd_source_finalize
 };
 
+/* TODO: do we still need this ? */
+static gboolean socket_source_cb(gpointer user_data)
+{
+    return true;
+}
+
 static gboolean fd_source_cb(gpointer user_data)
 {
     return true;
@@ -243,17 +254,248 @@ found:
     return 0;
 }
 
+#else
+
+typedef struct SocketSource {
+    GSource source;
+    QemuMutex mutex;
+    QLIST_HEAD(, IOHandlerRecord) io_handlers;
+    bool dispatching;
+    QemuCond dispatching_complete;
+} SocketSource;
+
+static gboolean socket_source_prepare(GSource *source, gint *timeout)
+{
+    SocketSource *ssrc = (SocketSource *)source;
+    IOHandlerRecord *pioh, *ioh;
+
+    qemu_mutex_lock(&ssrc->mutex);
+
+    QLIST_FOREACH_SAFE(ioh, &ssrc->io_handlers, next, pioh) {
+        int events = 0;
+
+        if (ioh->deleted) {
+            g_source_remove_poll(source, &ioh->pfd);
+            WSAEventSelect(ioh->fd, NULL, 0);
+            QLIST_REMOVE(ioh, next);
+            g_free(ioh);
+            continue;
+        }
+        ioh->wsa_event_mask = 0;
+        if (ioh->fd_read &&
+            (!ioh->fd_read_poll ||
+             ioh->fd_read_poll(ioh->opaque) != 0)) {
+            ioh->wsa_event_mask = FD_READ | FD_ACCEPT | FD_CLOSE;
+        }
+
+        if (ioh->fd_write) {
+            ioh->wsa_event_mask |= FD_WRITE | FD_CONNECT | FD_OOB;
+        }
+
+        if (!ioh->wsa_event_mask && !fd_read_poll) {
+            deleted = true;
+        }
+
+        if (ioh->wsa_event_mask) {
+            WSAEventSelect(ioh->fd, ioh->pfd.fd, ioh->wsa_event_mask);
+        }
+    }
+
+    qemu_mutex_unlock(&ssrc->mutex);
+
+    return false;
+}
+
+static gboolean socket_source_check(GSource *source)
+{
+    SocketSource *ssrc = (SocketSource *)source;
+    IOHandlerRecord *ioh;
+    gboolean dispatch_needed = false;
+
+    qemu_mutex_lock(&ssrc->mutex);
+
+    QLIST_FOREACH(ioh, &ssrc->io_handler, next) {
+        WSANETWORKEVENTS wsa_events = { 0 };
+        int ret;
+        if (ioh->pfd.revents == 0) {
+            continue;
+        }
+        ret = WSAEnumNetworkEvents(ioh->fd, ioh->pfd.fd, &wsa_events);
+        g_assert(ret == 0);
+
+        ioh->wsa_events = wsa_events.lNetworkEvents;
+        if (ioh->wsa_events & ioh->wsa_event_mask) {
+            dispatch_needed = true;
+        }
+    }
+
+    qemu_mutex_unlock(&ssrc->mutex);
+
+    return dispatch_needed;
+}
+
+static gboolean socket_source_dispatch(GSource *source,
+                                       GSourceFunc cb,
+                                       gpointer user_data)
+{
+    SocketSource *fdsrc = (SocketSource *)source;
+    IOHandlerRecord *pioh, *ioh;
+
+    qemu_mutex_lock(&fdsrc->mutex);
+    fdsrc->dispatching = true;
+    qemu_mutex_unlock(&fdsrc->mutex);
+
+    /* dispatch functions may modify io_handlers as we
+     * call them here, but we are guaranteed no other thread will
+     * access this list since, while we're dispatching, all functions
+     * that attempt to access FDSource members must wait on
+     * dispatching_complete condition unless g_main_context_is_owner()
+     * is true for the calling thread. as a result, we can walk the
+     * list here without holding the FSource mutex, since it's
+     * guaranteed these conditions will hold due to
+     * g_main_context_acquire() being required prior to calling
+     * g_main_context_dispatch()
+     */
+    QLIST_FOREACH_SAFE(ioh, &fdsrc->io_handlers, next, pioh) {
+        int revents = 0;
+
+        if (ioh->deleted) {
+            continue;
+        }
+
+        if (ioh->fd_read &&
+            (ioh->wsa_events & (FD_READ | FD_ERR | FD_OOB))) {
+            ioh->fd_read(ioh->opaque);
+        }
+
+        if (ioh->fd_write &&
+            (ioh->wsa_events & (FD_WRITE | FD_CONNECT))) {
+            ioh->fd_write(ioh->opaque);
+        }
+
+        ioh->wsa_events = 0;
+        ioh->pfd.revents = 0;
+    }
+
+    qemu_mutex_lock(&ssrc->mutex);
+    ssrc->dispatching = false;
+    qemu_cond_broadcast(&ssrc->dispatching_complete);
+    qemu_mutex_unlock(&ssrc->mutex);
+
+    return true;
+}
+
+static void socket_source_finalize(GSource *source)
+{
+}
+
+static GSourceFuncs socket_source_funcs = {
+    socket_source_prepare,
+    socket_source_check,
+    socket_source_dispatch,
+    socket_source_finalize,
+};
+
+void socket_source_attach(GMainContext *ctx)
+{
+    GSource *src = g_source_new(&socket_source_funcs, sizeof(SocketSource));
+    SocketSource *ssrc = (SocketSource *)src;
+
+    QLIST_INIT(&ssrc->io_handlers);
+    qemu_mutex_init(&fdsrc->mutex);
+    g_source_set_callback(src, socket_source_cb, NULL, NULL);
+    g_source_attach(src, ctx);
+
+}
+
+static int socket_source_set_handler(GMainContext *ctx,
+                                     int fd,
+                                     IOCanReadHandler *fd_read_poll,
+                                     IOHandler *fd_read,
+                                     IOHandler *fd_write,
+                                     void *opaque)
+{
+    GSource *src;
+    SocketSource *ssrc;
+    IOHandlerRecord *ioh;
+    bool in_dispatch;
+
+    assert(fd >= 0);
+
+    if (!ctx) {
+        ctx = g_main_context_default();
+    }
+    /* FIXME: we need a more reliable way to find our GSource */
+    src = g_main_context_find_source_by_funcs_user_data(
+            ctx, &socket_source_funcs, NULL);
+    assert(src);
+    ssrc = (SocketSource *)src;
+
+    qemu_mutex_lock(&ssrc->mutex);
+    in_dispatch = ssrc->dispatching && g_main_context_is_owner(ctx);
+
+    if (!in_dispatch) {
+        while (ssrc->dispatching) {
+            qemu_cond_wait(&ssrc->dispatching_complete, &ssrc->mutex);
+        }
+    }
+
+    if (!fd_read && !fd_write) {
+        QLIST_FOREACH(ioh, &ssrc->io_handlers, next) {
+            if (ioh->fd == fd) {
+                ioh->deleted = 1;
+                break;
+            }
+        }
+    } else {
+        QLIST_FOREACH(ioh, &ssrc->io_handlers, next) {
+            if (ioh->fd == fd)
+                goto found;
+        }
+        ioh = g_malloc0(sizeof(IOHandlerRecord));
+        QLIST_INSERT_HEAD(&ssrc->io_handlers, ioh, next);
+        ioh->fd = fd;
+        ioh->pfd.fd = WSACreateEvent();
+        /* TODO: is G_IO_IN sufficient for all socket events? */
+        ioh->pfd.events = G_IO_IN;
+        /* TODO: only check for events our handlers would be interested in */
+        WSAEventSelect(ioh->fd, ioh->pfd.fd,
+                       FD_READ | FD_ACCEPT | FD_CLOSE |
+                       FD_CONNECT | FD_WRITE | FD_OOB);
+        g_source_add_poll(src, &ioh->pfd);
+found:
+        ioh->fd_read_poll = fd_read_poll;
+        ioh->fd_read = fd_read;
+        ioh->fd_write = fd_write;
+        ioh->opaque = opaque;
+        ioh->deleted = 0;
+        g_main_context_wakeup(ctx);
+    }
+
+    qemu_mutex_unlock(&ssrc->mutex);
+
+    return 0;
+
+}
+#endif
+
 int qemu_set_fd_handler2(int fd,
                          IOCanReadHandler *fd_read_poll,
                          IOHandler *fd_read,
                          IOHandler *fd_write,
                          void *opaque)
 {
+#ifndef _WIN32
     return fd_source_set_handler(NULL, fd, fd_read_poll, fd_read, fd_write,
                                  opaque);
+#else
+    return socket_source_set_handler(NULL, fd, fd_read_poll, fd_read, fd_write,
+                                     opaque);
+#endif
 }
 
-#else
+#if 0
+//#else
 
 typedef struct SocketHandler {
     GSource source;
