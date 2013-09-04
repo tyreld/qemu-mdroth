@@ -2892,6 +2892,9 @@ static int object_create(QemuOpts *opts, void *opaque)
     return 0;
 }
 
+#include "qapi/qmp/dispatch.h"
+#include "qga-host-qmp-commands.h"
+
 int main(int argc, char **argv, char **envp)
 {
     int i;
@@ -2941,6 +2944,9 @@ int main(int argc, char **argv, char **envp)
     }
 
     module_call_init(MODULE_INIT_QOM);
+    module_call_init(MODULE_INIT_QAPI);
+    g_assert(qmp_find_command("guest-host-ping") != NULL);
+    g_assert(qmp_guest_host_ping(NULL) == true);
 
     qemu_add_opts(&qemu_drive_opts);
     qemu_add_opts(&qemu_chardev_opts);
