@@ -1,0 +1,8 @@
+# -*- Mode: Python -*-
+#
+# QAPI Schema
+
+{
+    'command': 'guest-host-ping',
+    'returns': 'bool'
+}

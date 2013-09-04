@@ -39,7 +39,9 @@ endif
 
 GENERATED_HEADERS = config-host.h qemu-options.def
 GENERATED_HEADERS += qmp-commands.h qapi-types.h qapi-visit.h
+GENERATED_HEADERS += qga-host-qmp-commands.h qga-host-qapi-types.h qga-host-qapi-visit.h
 GENERATED_SOURCES += qmp-marshal.c qapi-types.c qapi-visit.c
+GENERATED_SOURCES += qga-host-qmp-marshal.c qga-host-qapi-types.c qga-host-qapi-visit.c
 
 GENERATED_HEADERS += trace/generated-events.h
 GENERATED_SOURCES += trace/generated-events.c
@@ -155,7 +157,7 @@ subdir-dtc:dtc/libfdt dtc/tests
 dtc/%:
 	mkdir -p $@
 
-$(SUBDIR_RULES): libqemuutil.a libqemustub.a $(common-obj-y)
+$(SUBDIR_RULES): libqemuutil.a libqemustub.a $(common-obj-y) libqgahost.a
 
 ROMSUBDIR_RULES=$(patsubst %,romsubdir-%, $(ROMS))
 romsubdir-%:
@@ -179,6 +181,7 @@ Makefile: $(version-obj-y) $(version-lobj-y)
 
 libqemustub.a: $(stub-obj-y)
 libqemuutil.a: $(util-obj-y) qapi-types.o qapi-visit.o
+libqgahost.a: $(qga-host-obj-y)
 
 ######################################################################
 
@@ -228,6 +231,20 @@ $(qga-obj-y) qemu-ga.o: $(QGALIB_GEN)
 
 qemu-ga$(EXESUF): $(qga-obj-y) libqemuutil.a libqemustub.a
 	$(call LINK, $^)
+
+qga-host-qapi-types.c qga-host-qapi-types.h :\
+$(SRC_PATH)/qga/qapi-schema-qga-host.json $(SRC_PATH)/scripts/qapi-types.py $(qapi-py)
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-types.py $(gen-out-type) -o "." -p "qga-host-" < $<, "  GEN   $@")
+qga-host-qapi-visit.c qga-host-qapi-visit.h :\
+$(SRC_PATH)/qga/qapi-schema-qga-host.json $(SRC_PATH)/scripts/qapi-visit.py $(qapi-py)
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-visit.py $(gen-out-type) -o "." -p "qga-host-" < $<, "  GEN   $@")
+qga-host-qmp-commands.h qga-host-qmp-marshal.c :\
+$(SRC_PATH)/qga/qapi-schema-qga-host.json $(SRC_PATH)/scripts/qapi-commands.py $(qapi-py)
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -o "." -p "qga-host-" < $<, "  GEN   $@")
+
+QGAHOSTLIB_GEN=qga-host-qapi-types.h qga-host-qapi-visit.h qga-host-qmp-commands.h
+$(qga-host-obj-y): $(QGAHOSTLIB_GEN)
+
 
 clean:
 # avoid old build problems by removing potentially incorrect old files

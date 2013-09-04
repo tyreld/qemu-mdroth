@@ -150,6 +150,7 @@ include $(SRC_PATH)/Makefile.objs
 
 all-obj-y = $(obj-y)
 all-obj-y += $(addprefix ../, $(common-obj-y))
+all-obj-y += $(addprefix ../, $(qga-host-obj-y))
 
 ifndef CONFIG_HAIKU
 LIBS+=-lm
@@ -162,7 +163,7 @@ $(QEMU_PROGW): $(all-obj-y) ../libqemuutil.a ../libqemustub.a
 $(QEMU_PROG): $(QEMU_PROGW)
 	$(call quiet-command,$(OBJCOPY) --subsystem console $(QEMU_PROGW) $(QEMU_PROG),"  GEN   $(TARGET_DIR)$(QEMU_PROG)")
 else
-$(QEMU_PROG): $(all-obj-y) ../libqemuutil.a ../libqemustub.a
+$(QEMU_PROG): $(all-obj-y) ../libqemuutil.a ../libqemustub.a ../libqgahost.a
 	$(call LINK,$^)
 endif
 
