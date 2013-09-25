@@ -81,6 +81,7 @@
 #define HTAB_SIZE(spapr)        (1ULL << ((spapr)->htab_shift))
 
 sPAPREnvironment *spapr;
+struct drc_table_entry drc_table[SPAPR_DRC_TABLE_SIZE];
 
 int spapr_allocate_irq(int hint, bool lsi)
 {
@@ -268,6 +269,132 @@ static size_t create_page_sizes_prop(CPUPPCState *env, uint32_t *prop,
         }                                                          \
     } while (0)
 
+static void spapr_init_drc_table(void)
+{
+    int i;
+
+    memset(drc_table, 0, sizeof(drc_table));
+
+    /* For now we only care about PHB entries */
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        drc_table[i].drc_index = 0x2000001 + i;
+    }
+}
+
+struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
+                                                   uint32_t state)
+{
+    struct drc_table_entry *empty_drc = NULL;
+    struct drc_table_entry *found_drc = NULL;
+    int i;
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        if (drc_table[i].phb_buid == 0) {
+            empty_drc = &drc_table[i];
+        }
+
+        if (drc_table[i].phb_buid == buid) {
+            found_drc = &drc_table[i];
+            break;
+        }
+    }
+
+    if (found_drc) {
+        return found_drc;
+    }
+
+    if (empty_drc) {
+        empty_drc->phb_buid = buid;
+        empty_drc->state = state;
+        return empty_drc;
+    }
+
+    return NULL;
+}
+
+struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid)
+{
+    int i;
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        if (drc_table[i].phb_buid == buid) {
+            return &drc_table[i];
+        }
+     }
+
+     return NULL;
+}
+
+static void spapr_create_drc_dt_entries(void *fdt)
+{
+    char char_buf[1024];
+    uint32_t int_buf[SPAPR_DRC_TABLE_SIZE + 1];
+    uint32_t *entries;
+    int offset, fdt_offset;
+    int i, ret;
+
+    fdt_offset = fdt_path_offset(fdt, "/");
+
+    /* ibm,drc-indexes */
+    memset(int_buf, 0, sizeof(int_buf));
+    int_buf[0] = SPAPR_DRC_TABLE_SIZE;
+
+    for (i = 1; i <= SPAPR_DRC_TABLE_SIZE; i++) {
+        int_buf[i] = drc_table[i-1].drc_index;
+    }
+
+    ret = fdt_setprop(fdt, fdt_offset, "ibm,drc-indexes", int_buf,
+                      sizeof(int_buf));
+    if (ret) {
+        fprintf(stderr, "Couldn't finalize ibm,drc-indexes property\n");
+    }
+
+    /* ibm,drc-power-domains */
+    memset(int_buf, 0, sizeof(int_buf));
+    int_buf[0] = SPAPR_DRC_TABLE_SIZE;
+
+    for (i = 1; i <= SPAPR_DRC_TABLE_SIZE; i++) {
+        int_buf[i] = 0xffffffff;
+    }
+
+    ret = fdt_setprop(fdt, fdt_offset, "ibm,drc-power-domains", int_buf,
+                      sizeof(int_buf));
+    if (ret) {
+        fprintf(stderr, "Couldn't finalize ibm,drc-power-domains property\n");
+    }
+
+    /* ibm,drc-names */
+    memset(char_buf, 0, sizeof(char_buf));
+    entries = (uint32_t *)&char_buf[0];
+    *entries = SPAPR_DRC_TABLE_SIZE;
+    offset = sizeof(*entries);
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        offset += sprintf(char_buf + offset, "PHB %d", i + 1);
+        char_buf[offset++] = '\0';
+    }
+
+    ret = fdt_setprop(fdt, fdt_offset, "ibm,drc-names", char_buf, offset);
+    if (ret) {
+        fprintf(stderr, "Couldn't finalize ibm,drc-names property\n");
+    }
+
+    /* ibm,drc-types */
+    memset(char_buf, 0, sizeof(char_buf));
+    entries = (uint32_t *)&char_buf[0];
+    *entries = SPAPR_DRC_TABLE_SIZE;
+    offset = sizeof(*entries);
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        offset += sprintf(char_buf + offset, "PHB");
+        char_buf[offset++] = '\0';
+    }
+
+    ret = fdt_setprop(fdt, fdt_offset, "ibm,drc-types", char_buf, offset);
+    if (ret) {
+        fprintf(stderr, "Couldn't finalize ibm,drc-types property\n");
+    }
+}
 
 static void *spapr_create_fdt_skel(const char *cpu_model,
                                    hwaddr initrd_base,
@@ -275,7 +402,7 @@ static void *spapr_create_fdt_skel(const char *cpu_model,
                                    hwaddr kernel_size,
                                    const char *boot_device,
                                    const char *kernel_cmdline,
-                                   uint32_t epow_irq)
+                                   uint32_t check_exception_irq)
 {
     void *fdt;
     CPUState *cs;
@@ -289,6 +416,8 @@ static void *spapr_create_fdt_skel(const char *cpu_model,
     char *modelname;
     int i, smt = kvmppc_smt_threads();
     unsigned char vec5[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x80};
+
+    spapr_init_drc_table();
 
     fdt = g_malloc0(FDT_MAX_SIZE);
     _FDT((fdt_create(fdt, FDT_MAX_SIZE)));
@@ -498,7 +627,7 @@ static void *spapr_create_fdt_skel(const char *cpu_model,
     _FDT((fdt_end_node(fdt)));
 
     /* event-sources */
-    spapr_events_fdt_skel(fdt, epow_irq);
+    spapr_events_fdt_skel(fdt, check_exception_irq);
 
     _FDT((fdt_end_node(fdt))); /* close root node */
     _FDT((fdt_finish(fdt)));
@@ -576,6 +705,7 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
     int ret;
     void *fdt;
     sPAPRPHBState *phb;
+    struct drc_table_entry *drc_entry;
 
     fdt = g_malloc(FDT_MAX_SIZE);
 
@@ -595,7 +725,9 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
     }
 
     QLIST_FOREACH(phb, &spapr->phbs, list) {
-        ret = spapr_populate_pci_dt(phb, PHANDLE_XICP, fdt);
+        drc_entry = spapr_add_phb_to_drc_table(phb->buid, 1 /* Usable */);
+        ret = spapr_populate_pci_dt(phb, PHANDLE_XICP, drc_entry->drc_index,
+                                    fdt);
     }
 
     if (ret < 0) {
@@ -618,6 +750,8 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
     if (!spapr->has_graphics) {
         spapr_populate_chosen_stdout(fdt, spapr->vio_bus);
     }
+
+    spapr_create_drc_dt_entries(fdt);
 
     _FDT((fdt_pack(fdt)));
 
@@ -1333,7 +1467,7 @@ static void ppc_spapr_init(QEMUMachineInitArgs *args)
                                             initrd_base, initrd_size,
                                             kernel_size,
                                             boot_device, kernel_cmdline,
-                                            spapr->epow_irq);
+                                            spapr->check_exception_irq);
     assert(spapr->fdt_skel != NULL);
 }
 

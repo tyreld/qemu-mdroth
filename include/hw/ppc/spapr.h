@@ -32,7 +32,7 @@ typedef struct sPAPREnvironment {
     char *cpu_model;
     bool has_graphics;
 
-    uint32_t epow_irq;
+    uint32_t check_exception_irq;
     Notifier epow_notifier;
 
     /* Migration state */
@@ -381,7 +381,7 @@ struct sPAPRTCETable {
 };
 
 void spapr_events_init(sPAPREnvironment *spapr);
-void spapr_events_fdt_skel(void *fdt, uint32_t epow_irq);
+void spapr_events_fdt_skel(void *fdt, uint32_t check_exception_irq);
 sPAPRTCETable *spapr_tce_new_table(DeviceState *owner, uint32_t liobn,
                                    size_t window_size);
 MemoryRegion *spapr_tce_get_iommu(sPAPRTCETable *tcet);
@@ -391,4 +391,22 @@ int spapr_dma_dt(void *fdt, int node_off, const char *propname,
 int spapr_tcet_dma_dt(void *fdt, int node_off, const char *propname,
                       sPAPRTCETable *tcet);
 
+struct sPAPRPHBState;
+
+struct drc_table_entry {
+    uint32_t drc_index;
+    uint64_t phb_buid;
+    void *fdt;
+    int fdt_offset;
+    uint32_t state;
+};
+
+#define SPAPR_DRC_TABLE_SIZE    32
+extern struct drc_table_entry drc_table[SPAPR_DRC_TABLE_SIZE];
+struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
+                                                   uint32_t state);
+struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid);
+
+void spapr_pci_hotplug_add(DeviceState *qdev);
+void spapr_pci_hotplug_remove(DeviceState *qdev);
 #endif /* !defined (__HW_SPAPR_H__) */

@@ -404,6 +404,176 @@ static void rtas_ibm_query_interrupt_source_number(PowerPCCPU *cpu,
     rtas_st(rets, 2, 1);/* 0 == level; 1 == edge */
 }
 
+static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
+                               uint32_t token, uint32_t nargs,
+                               target_ulong args, uint32_t nret,
+                               target_ulong rets)
+{
+    uint32_t indicator = rtas_ld(args, 0);
+    uint32_t drc_index = rtas_ld(args, 1);
+    uint32_t indicator_state = rtas_ld(args, 2);
+    struct drc_table_entry *drc_entry = NULL;
+    int i;
+
+    switch (indicator) {
+    case 9001: /* Isolation state */
+        for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+            if (drc_table[i].drc_index == drc_index) {
+                drc_entry = &drc_table[i];
+                break;
+            }
+        }
+
+        if (drc_entry) {
+            drc_entry->state = indicator_state;
+        }
+        break;
+
+    case 9003: /* Allocation State */
+        break;
+    }
+
+    rtas_st(rets, 0, 0);
+}
+
+static void rtas_set_power_level(PowerPCCPU *cpu, sPAPREnvironment *spapr,
+                                 uint32_t token, uint32_t nargs,
+                                 target_ulong args, uint32_t nret,
+                                 target_ulong rets)
+{
+    uint32_t power_lvl = rtas_ld(args, 0);
+
+    rtas_st(rets, 0, 0);
+    rtas_st(rets, 1, power_lvl);
+}
+
+static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
+                                  uint32_t token, uint32_t nargs,
+                                  target_ulong args, uint32_t nret,
+                                  target_ulong rets)
+{
+    uint32_t sensor = rtas_ld(args, 0);
+    uint32_t drc_index = rtas_ld(args, 0);
+    uint32_t sensor_state = 0;
+    struct drc_table_entry *drc_entry = NULL;
+    int i;
+
+    switch (sensor) {
+    case 9003: /* DR-Entity-Sense */
+        for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+            if (drc_table[i].drc_index == drc_index) {
+                drc_entry = &drc_table[i];
+                break;
+            }
+        }
+
+        if (drc_entry) {
+            sensor_state = drc_entry->state;
+        }
+
+        break;
+    }
+
+    rtas_st(rets, 0, 0);
+    rtas_st(rets, 1, sensor_state);
+}
+
+static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
+                                         sPAPREnvironment *spapr,
+                                         uint32_t token, uint32_t nargs,
+                                         target_ulong args, uint32_t nret,
+                                         target_ulong rets)
+{
+    uint64_t wa_addr = ((uint64_t)rtas_ld(args, 0) << 32) | rtas_ld(args, 1);
+    struct drc_table_entry *drc_entry = NULL;
+    void *wa_buf, *fdt = NULL;
+    hwaddr map_len = 0x1024;
+    uint32_t fdt_size = 0x1024;
+    uint32_t phandle_xicp = 0x00001111;
+    int wa_offset;
+    uint32_t drc_index;
+    int i, rc, offset;
+
+    wa_buf = cpu_physical_memory_map(wa_addr, &map_len, 1);
+    if (!wa_buf) {
+        rtas_st(rets, 0, -1);
+        return;
+    }
+
+    drc_index = *(uint32_t *)wa_buf;
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        if (drc_table[i].drc_index == drc_index) {
+            drc_entry = &drc_table[i];
+            break;
+        }
+    }
+
+    if (!drc_entry) {
+        rc = -1;
+        goto error_exit;
+    }
+
+    if (!drc_entry->fdt) {
+        sPAPRPHBState *phb = find_phb(spapr, drc_entry->phb_buid);
+
+        drc_entry->fdt = g_malloc(fdt_size);
+        fdt_create(drc_entry->fdt, fdt_size);
+        rc = spapr_populate_pci_dt(phb, phandle_xicp, drc_entry->drc_index,
+                                   drc_entry->fdt);
+        fdt_finish(drc_entry->fdt);
+    }
+
+    fdt_open_into(drc_entry->fdt, fdt, fdt_size);
+
+    if (drc_entry->fdt_offset == 0) {
+        const char *name;
+        int name_len, name_offset;
+
+        /* First call, return the node name */
+        offset = fdt_next_node(fdt, 0, NULL);
+        name = fdt_get_name(fdt, offset, &name_len);
+        name_offset = sizeof(uint32_t) * 3;
+
+	wa_offset = sizeof(uint32_t) * 2;
+        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_offset);
+        sprintf(wa_buf + wa_offset, "%s", name);
+
+        drc_entry->fdt_offset = offset;
+        rc = 1; /* Next Sibling */
+    } else {
+        const struct fdt_property *prop;
+        const char *name;
+        int len, name_offset, name_len;
+
+        offset = fdt_next_property_offset(fdt, drc_entry->fdt_offset);
+        if (offset == -FDT_ERR_BADOFFSET) {
+            /* try first offset */
+            offset = fdt_first_property_offset(fdt, drc_entry->fdt_offset);
+        }
+
+        prop = fdt_get_property_by_offset(fdt, offset, &len);
+        name = fdt_string(fdt, fdt32_to_cpu(prop->nameoff));
+        name_offset = sizeof(uint32_t) * 5;
+        name_len = strlen(name) + 1;
+
+        wa_offset = sizeof(uint32_t) * 2;
+        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_offset);
+        wa_offset += sprintf(wa_buf + wa_offset, "%d", len);
+        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_len);
+        wa_offset += sprintf(wa_buf + wa_offset, "%s", name);
+	memcpy(wa_buf + wa_offset, prop->data, len);
+
+        drc_entry->fdt_offset = offset;
+        rc = 3; /* Next Property */
+    }
+
+    fdt_pack(fdt);
+
+error_exit:
+    cpu_physical_memory_unmap(wa_buf, 0x1024, 1, 0x1024);
+    rtas_st(rets, 0, rc);
+}
+
 static int pci_spapr_swizzle(int slot, int pin)
 {
     return (slot + pin) % PCI_NUM_PINS;
@@ -476,6 +646,28 @@ void spapr_pci_msi_init(sPAPREnvironment *spapr, hwaddr addr)
 /*
  * PHB PCI device
  */
+
+static int spapr_device_hotplug(DeviceState *qdev, PCIDevice *dev,
+                                PCIHotplugState state)
+{
+    int slot = PCI_SLOT(dev->devfn);
+
+    if (state == PCI_COLDPLUG_ENABLED) {
+        /* Called during machine creation */
+        return 0;
+    }
+
+    if (state == PCI_HOTPLUG_ENABLED) {
+        fprintf(stderr, "Hot add of device on slot %d\n", slot);
+        spapr_pci_hotplug_add(qdev);
+    } else {
+        fprintf(stderr, "Hot remove of device on slot %d\n", slot);
+        spapr_pci_hotplug_remove(qdev);
+    }
+
+    return 0;
+}
+
 static AddressSpace *spapr_pci_dma_iommu(PCIBus *bus, void *opaque, int devfn)
 {
     sPAPRPHBState *phb = opaque;
@@ -624,6 +816,9 @@ static int spapr_phb_init(SysBusDevice *s)
         sphb->lsi_table[i].irq = irq;
     }
 
+    /* Setup hotplug */
+    pci_bus_hotplug(bus, spapr_device_hotplug, DEVICE(sphb));
+
     return 0;
 }
 
@@ -747,7 +942,7 @@ PCIHostState *spapr_create_phb(sPAPREnvironment *spapr, int index)
 #define b_rrrrrrrr(x)   b_x((x), 0, 8)  /* register number */
 
 int spapr_populate_pci_dt(sPAPRPHBState *phb,
-                          uint32_t xics_phandle,
+                          uint32_t xics_phandle, uint32_t drc_index,
                           void *fdt)
 {
     int bus_off, i, j;
@@ -825,6 +1020,11 @@ int spapr_populate_pci_dt(sPAPRPHBState *phb,
     _FDT(fdt_setprop(fdt, bus_off, "interrupt-map", &interrupt_map,
                      sizeof(interrupt_map)));
 
+    if (drc_index) {
+        _FDT(fdt_setprop(fdt, bus_off, "ibm,my-drc-index", &drc_index,
+                         sizeof(drc_index)));
+    }
+
     spapr_dma_dt(fdt, bus_off, "ibm,dma-window",
                  phb->dma_liobn, phb->dma_window_start,
                  phb->dma_window_size);
@@ -843,6 +1043,11 @@ void spapr_pci_rtas_init(void)
                             rtas_ibm_query_interrupt_source_number);
         spapr_rtas_register("ibm,change-msi", rtas_ibm_change_msi);
     }
+    spapr_rtas_register("set-indicator", rtas_set_indicator);
+    spapr_rtas_register("set-power-level", rtas_set_power_level);
+    spapr_rtas_register("get-sensor-state", rtas_get_sensor_state);
+    spapr_rtas_register("ibm,configure-connector",
+                        rtas_ibm_configure_connector);
 }
 
 static void spapr_pci_register_types(void)
