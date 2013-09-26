@@ -484,7 +484,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
                                          target_ulong args, uint32_t nret,
                                          target_ulong rets)
 {
-    uint64_t wa_addr = ((uint64_t)rtas_ld(args, 0) << 32) | rtas_ld(args, 1);
+    uint64_t wa_addr = ((uint64_t)rtas_ld(args, 1) << 32) | rtas_ld(args, 0);
     struct drc_table_entry *drc_entry = NULL;
     void *wa_buf, *fdt = NULL;
     hwaddr map_len = 0x1024;
