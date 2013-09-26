@@ -725,7 +725,7 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
     }
 
     QLIST_FOREACH(phb, &spapr->phbs, list) {
-        drc_entry = spapr_add_phb_to_drc_table(phb->buid, 1 /* Usable */);
+        drc_entry = spapr_add_phb_to_drc_table(phb->buid, 2 /* Unusable */);
         ret = spapr_populate_pci_dt(phb, PHANDLE_XICP, drc_entry->drc_index,
                                     fdt);
     }
