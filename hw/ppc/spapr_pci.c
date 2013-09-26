@@ -523,6 +523,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         fdt_finish(drc_entry->fdt);
     }
 
+    fdt = g_malloc0(fdt_size + 4096);
     fdt_open_into(drc_entry->fdt, fdt, fdt_size);
 
     if (drc_entry->fdt_offset == 0) {
