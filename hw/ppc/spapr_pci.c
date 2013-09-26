@@ -475,6 +475,8 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     }
 
     rtas_st(rets, 0, 0);
+    /* TODO: force this so drmgr doesn't complain, fix this properly soon */
+    sensor_state = 2;
     rtas_st(rets, 1, sensor_state);
 }
 
