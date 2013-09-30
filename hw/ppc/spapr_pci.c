@@ -46,6 +46,14 @@
 #define RTAS_TYPE_MSI           1
 #define RTAS_TYPE_MSIX          2
 
+#define _FDT(exp) \
+    do { \
+        int ret = (exp);                                           \
+        if (ret < 0) {                                             \
+            return ret;                                            \
+        }                                                          \
+    } while (0)
+
 static sPAPRPHBState *find_phb(sPAPREnvironment *spapr, uint64_t buid)
 {
     sPAPRPHBState *sphb;
@@ -480,6 +488,75 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     rtas_st(rets, 1, sensor_state);
 }
 
+/* XXX: temporary code for debugging */
+static void print_fdt_prop(void *fdt, int offset)
+{
+    const struct fdt_property *prop;
+    const char *prop_name;
+    int prop_len;
+
+    prop = fdt_get_property_by_offset(fdt, offset, &prop_len);
+    prop_name = fdt_string(fdt, fdt32_to_cpu(prop->nameoff));
+
+    switch (prop_len) {
+    case 1:
+        g_print("prop name: %s, len: %d, value: %xh\n",
+                prop_name, prop_len, ((uint8_t *)prop->data)[0]);
+        break;
+    case 2:
+        g_print("prop name: %s, len: %d, value: %xh\n",
+                prop_name, prop_len, ((uint16_t *)prop->data)[0]);
+        break;
+    case 4:
+        g_print("prop name: %s, len: %d, value: %xh\n",
+                prop_name, prop_len, ((uint32_t *)prop->data)[0]);
+        break;
+    case 8:
+        g_print("prop name: %s, len: %d, value: %lxh\n",
+                prop_name, prop_len, ((uint64_t *)prop->data)[0]);
+        break;
+    case 0:
+        g_print("prop name: %s, len: %d, value: <none>\n",
+                prop_name, prop_len);
+        break;
+    default:
+        g_print("prop name: %s, len: %d, value: <buffer>\n",
+                prop_name, prop_len);
+        break;
+    }
+}
+
+/* XXX: temporary code for debugging */
+static void print_fdt(void *fdt, int offset, int depth)
+{
+    int next_offset = offset;
+    int tag;
+
+    do {
+        int offset = next_offset;
+        const char *nodename;
+        int nodename_len;
+
+        tag = fdt_next_tag(fdt, offset, &next_offset);
+        switch (tag) {
+        case FDT_BEGIN_NODE:
+            depth++;
+            nodename = fdt_get_name(fdt, offset, &nodename_len);
+            g_print("BEGIN NODE ('%s', depth: %d)\n", nodename, depth);
+            break;
+        case FDT_END_NODE:
+            g_print("END NODE (depth: %d)\n", depth);
+            depth--;
+            break;
+        case FDT_PROP:
+            print_fdt_prop(fdt, offset);
+        default:
+            /* skip */
+            break;
+        }
+    } while (tag != FDT_END);
+}
+
 static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
                                          sPAPREnvironment *spapr,
                                          uint32_t token, uint32_t nargs,
@@ -650,6 +727,51 @@ void spapr_pci_msi_init(sPAPREnvironment *spapr, hwaddr addr)
  * PHB PCI device
  */
 
+static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
+{
+    sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
+    struct drc_table_entry *drc_entry;
+    void *fdt;
+    char nodename[512];
+    int offset;
+
+    /* TODO: for now we assume a DT node was created for this PHB as part
+     * of machine realization. when we add support for hotplugging PHBs,
+     * we'll need to create the PHB DT node and add it to drc_table some
+     * time prior to adding the node for the actual PCIDevice here.
+     * configure_connector will act on the entire PHB DT, and so should
+     * be agnostic to such changes.
+     */
+    drc_entry = spapr_phb_to_drc_entry(phb->buid);
+    g_assert(drc_entry);
+    spapr_load_phb_node(drc_entry);
+    g_assert(drc_entry->fdt);
+    fdt = drc_entry->fdt;
+    offset = drc_entry->fdt_offset;
+
+    g_warning("INITIAL FDT");
+    print_fdt(drc_entry->fdt, drc_entry->fdt_offset, -1);
+
+    /* add OF node for pci device and required OF DT properties */
+    sprintf(nodename, "pci@%" PRIx64, (long unsigned)1024);
+    offset = fdt_add_subnode(fdt, drc_entry->fdt_offset, nodename);
+    /* TODO: check endianess */
+    _FDT(fdt_setprop_cell(fdt, offset, "vendor-id",
+                          pci_default_read_config(dev, PCI_VENDOR_ID, 2)));
+    _FDT(fdt_setprop_cell(fdt, offset, "device-id",
+                          pci_default_read_config(dev, PCI_DEVICE_ID, 2)));
+
+    g_warning("NEW FDT");
+    print_fdt(drc_entry->fdt, drc_entry->fdt_offset, -1);
+
+    return 0;
+}
+
+static void spapr_phb_remove_pci_dt(DeviceState *qdev, PCIDevice *dev)
+{
+    /* TODO */
+}
+
 static int spapr_device_hotplug(DeviceState *qdev, PCIDevice *dev,
                                 PCIHotplugState state)
 {
@@ -662,9 +784,13 @@ static int spapr_device_hotplug(DeviceState *qdev, PCIDevice *dev,
 
     if (state == PCI_HOTPLUG_ENABLED) {
         fprintf(stderr, "Hot add of device on slot %d\n", slot);
+
+        spapr_phb_add_pci_dt(qdev, dev);
         spapr_pci_hotplug_add(qdev);
     } else {
         fprintf(stderr, "Hot remove of device on slot %d\n", slot);
+
+        spapr_phb_remove_pci_dt(qdev, dev);
         spapr_pci_hotplug_remove(qdev);
     }
 
@@ -980,13 +1106,6 @@ int spapr_populate_pci_dt(sPAPRPHBState *phb,
         return bus_off;
     }
 
-#define _FDT(exp) \
-    do { \
-        int ret = (exp);                                           \
-        if (ret < 0) {                                             \
-            return ret;                                            \
-        }                                                          \
-    } while (0)
 
     /* Write PHB properties */
     _FDT(fdt_setprop_string(fdt, bus_off, "device_type", "pci"));
