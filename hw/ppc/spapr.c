@@ -396,6 +396,36 @@ static void spapr_create_drc_dt_entries(void *fdt)
     }
 }
 
+void spapr_load_phb_node(struct drc_table_entry *drc_entry)
+{
+    int depth;
+    int node_offset = 0;
+    void *fdt = g_malloc0(FDT_MAX_SIZE);
+
+    _FDT(fdt_open_into(spapr->fdt, fdt, FDT_MAX_SIZE));
+
+    while ((node_offset = fdt_next_node(fdt, node_offset, &depth)) >= 0) {
+        int prop_len = 0;
+        const uint32_t *data;
+
+        data = fdt_getprop(fdt, node_offset, "ibm,my-drc-index", &prop_len);
+        if (data == NULL) {
+            continue;
+        }
+        g_assert(prop_len == sizeof(drc_entry->drc_index));
+        if (*data == drc_entry->drc_index) {
+            if (drc_entry->fdt) {
+                g_free(drc_entry->fdt);
+            }
+            drc_entry->fdt = fdt;
+            drc_entry->fdt_offset = node_offset;
+            return;
+        }
+    }
+
+    g_free(fdt);
+}
+
 static void *spapr_create_fdt_skel(const char *cpu_model,
                                    hwaddr initrd_base,
                                    hwaddr initrd_size,
@@ -763,7 +793,10 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
 
     cpu_physical_memory_write(fdt_addr, fdt, fdt_totalsize(fdt));
 
-    g_free(fdt);
+    if (spapr->fdt) {
+        g_free(spapr->fdt);
+    }
+    spapr->fdt = fdt;
 }
 
 static uint64_t translate_kernel_address(void *opaque, uint64_t addr)

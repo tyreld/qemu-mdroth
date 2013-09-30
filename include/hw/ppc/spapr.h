@@ -26,6 +26,7 @@ typedef struct sPAPREnvironment {
     hwaddr fdt_addr, rtas_addr;
     long rtas_size;
     void *fdt_skel;
+    void *fdt;
     target_ulong entry_point;
     uint32_t next_irq;
     uint64_t rtc_offset;
@@ -409,4 +410,5 @@ struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid);
 
 void spapr_pci_hotplug_add(DeviceState *qdev);
 void spapr_pci_hotplug_remove(DeviceState *qdev);
+void spapr_load_phb_node(struct drc_table_entry *drc_entry);
 #endif /* !defined (__HW_SPAPR_H__) */
