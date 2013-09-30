@@ -537,7 +537,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         name = fdt_get_name(fdt, offset, &name_len);
         name_offset = sizeof(uint32_t) * 3;
 
-	wa_offset = sizeof(uint32_t) * 2;
+        wa_offset = sizeof(uint32_t) * 2;
         wa_offset += sprintf(wa_buf + wa_offset, "%d", name_offset);
         sprintf(wa_buf + wa_offset, "%s", name);
 
@@ -564,7 +564,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         wa_offset += sprintf(wa_buf + wa_offset, "%d", len);
         wa_offset += sprintf(wa_buf + wa_offset, "%d", name_len);
         wa_offset += sprintf(wa_buf + wa_offset, "%s", name);
-	memcpy(wa_buf + wa_offset, prop->data, len);
+        memcpy(wa_buf + wa_offset, prop->data, len);
 
         drc_entry->fdt_offset = offset;
         rc = 3; /* Next Property */
