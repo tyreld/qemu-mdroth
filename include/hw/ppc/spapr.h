@@ -394,12 +394,23 @@ int spapr_tcet_dma_dt(void *fdt, int node_off, const char *propname,
 
 struct sPAPRPHBState;
 
+typedef struct ConfigureConnectorState {
+    void *fdt;
+    int offset;
+    int depth;
+    enum {
+        CC_STATE_IDLE = 0,
+        CC_STATE_ACTIVE,
+    } state;
+} ConfigureConnectorState;
+
 struct drc_table_entry {
     uint32_t drc_index;
     uint64_t phb_buid;
     void *fdt;
     int fdt_offset;
     uint32_t state;
+    ConfigureConnectorState cc_state;
 };
 
 #define SPAPR_DRC_TABLE_SIZE    32

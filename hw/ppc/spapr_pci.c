@@ -557,6 +557,20 @@ static void print_fdt(void *fdt, int offset, int depth)
     } while (tag != FDT_END);
 }
 
+/* configure connector work area offsets, int32_t units */
+#define CC_IDX_NODE_NAME_OFFSET 2
+#define CC_IDX_PROP_NAME_OFFSET 2
+#define CC_IDX_PROP_LEN 3
+#define CC_IDX_PROP_DATA_OFFSET 4
+
+#define CC_VAL_DATA_OFFSET ((CC_IDX_PROP_DATA_OFFSET + 1) * 4)
+#define CC_RET_NEXT_SIB 1
+#define CC_RET_NEXT_CHILD 2
+#define CC_RET_NEXT_PROPERTY 3
+#define CC_RET_PREV_PARENT 4
+#define CC_RET_ERROR -1
+#define CC_RET_SUCCESS 0
+
 static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
                                          sPAPREnvironment *spapr,
                                          uint32_t token, uint32_t nargs,
@@ -565,24 +579,32 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
 {
     uint64_t wa_addr = ((uint64_t)rtas_ld(args, 1) << 32) | rtas_ld(args, 0);
     struct drc_table_entry *drc_entry = NULL;
-    void *wa_buf, *fdt = NULL;
+    ConfigureConnectorState *ccs;
+    void *wa_buf;
+    int32_t *wa_buf_int;
     hwaddr map_len = 0x1024;
-    uint32_t fdt_size = 0x1024;
-    uint32_t phandle_xicp = 0x00001111;
-    int wa_offset;
     uint32_t drc_index;
-    int i, rc, offset;
+    int i, rc, next_offset, tag, prop_len, node_name_len;
+    const struct fdt_property *prop;
+    const char *node_name, *prop_name;
 
     wa_buf = cpu_physical_memory_map(wa_addr, &map_len, 1);
     if (!wa_buf) {
-        rtas_st(rets, 0, -1);
-        return;
+        rc = CC_RET_ERROR;
+        goto error_exit;
     }
+    wa_buf_int = wa_buf;
 
+    /* TODO: this will get called initially for PHB, then for each HP device
+     * we'll get a call with the device drc_index, which we'll then need to
+     * use to index into the device's DT. so do we skip the device DT node
+     * properties until that 2nd phase?
+     */
     drc_index = *(uint32_t *)wa_buf;
     for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
         if (drc_table[i].drc_index == drc_index) {
             drc_entry = &drc_table[i];
+            ccs = &drc_entry->cc_state;
             break;
         }
     }
@@ -592,62 +614,55 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         goto error_exit;
     }
 
-    if (!drc_entry->fdt) {
-        sPAPRPHBState *phb = find_phb(spapr, drc_entry->phb_buid);
+    /* fdt should've been been attached to drc_entry during realize/hotplug */
+    spapr_load_phb_node(drc_entry);
+    g_assert(drc_entry->fdt);
 
-        drc_entry->fdt = g_malloc(fdt_size);
-        fdt_create(drc_entry->fdt, fdt_size);
-        rc = spapr_populate_pci_dt(phb, phandle_xicp, drc_entry->drc_index,
-                                   drc_entry->fdt);
-        fdt_finish(drc_entry->fdt);
+    if (ccs->state == CC_STATE_IDLE) {
+        ccs->fdt = drc_entry->fdt;
+        ccs->offset = drc_entry->fdt_offset;
+        ccs->depth = 0;
+        ccs->state = CC_STATE_ACTIVE;
     }
 
-    fdt = g_malloc0(fdt_size + 4096);
-    fdt_open_into(drc_entry->fdt, fdt, fdt_size);
+    tag = fdt_next_tag(ccs->fdt, ccs->offset, &next_offset);
+    ccs->offset = next_offset;
 
-    if (drc_entry->fdt_offset == 0) {
-        const char *name;
-        int name_len, name_offset;
-
-        /* First call, return the node name */
-        offset = fdt_next_node(fdt, 0, NULL);
-        name = fdt_get_name(fdt, offset, &name_len);
-        name_offset = sizeof(uint32_t) * 3;
-
-        wa_offset = sizeof(uint32_t) * 2;
-        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_offset);
-        sprintf(wa_buf + wa_offset, "%s", name);
-
-        drc_entry->fdt_offset = offset;
-        rc = 1; /* Next Sibling */
-    } else {
-        const struct fdt_property *prop;
-        const char *name;
-        int len, name_offset, name_len;
-
-        offset = fdt_next_property_offset(fdt, drc_entry->fdt_offset);
-        if (offset == -FDT_ERR_BADOFFSET) {
-            /* try first offset */
-            offset = fdt_first_property_offset(fdt, drc_entry->fdt_offset);
+    switch (tag) {
+    case FDT_BEGIN_NODE:
+        ccs->depth++;
+        node_name = fdt_get_name(ccs->fdt, ccs->offset, &node_name_len);
+        wa_buf_int[CC_IDX_NODE_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
+        strcpy(wa_buf + wa_buf_int[CC_IDX_NODE_NAME_OFFSET], node_name);
+        rc = CC_RET_NEXT_CHILD;
+        break;
+    case FDT_END_NODE:
+        ccs->depth--;
+        if (ccs->depth == 0) {
+            /* reached the end of top-level node, declare success */
+            ccs->state = CC_STATE_IDLE;
+            rc = CC_RET_SUCCESS;
+        } else {
+            rc = CC_RET_PREV_PARENT;
         }
+        break;
+    case FDT_PROP:
+        prop = fdt_get_property_by_offset(ccs->fdt, ccs->offset, &prop_len);
+        prop_name = fdt_string(ccs->fdt, fdt32_to_cpu(prop->nameoff));
+        wa_buf_int[CC_IDX_PROP_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
+        wa_buf_int[CC_IDX_PROP_LEN] = prop_len;
+        wa_buf_int[CC_IDX_PROP_DATA_OFFSET] =
+            CC_VAL_DATA_OFFSET + strlen(prop_name) + 1;
 
-        prop = fdt_get_property_by_offset(fdt, offset, &len);
-        name = fdt_string(fdt, fdt32_to_cpu(prop->nameoff));
-        name_offset = sizeof(uint32_t) * 5;
-        name_len = strlen(name) + 1;
-
-        wa_offset = sizeof(uint32_t) * 2;
-        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_offset);
-        wa_offset += sprintf(wa_buf + wa_offset, "%d", len);
-        wa_offset += sprintf(wa_buf + wa_offset, "%d", name_len);
-        wa_offset += sprintf(wa_buf + wa_offset, "%s", name);
-        memcpy(wa_buf + wa_offset, prop->data, len);
-
-        drc_entry->fdt_offset = offset;
-        rc = 3; /* Next Property */
+        strcpy(wa_buf + wa_buf_int[CC_IDX_PROP_NAME_OFFSET], prop_name);
+        memcpy(wa_buf + wa_buf_int[CC_IDX_PROP_DATA_OFFSET],
+               prop->data, prop_len);
+        rc = CC_RET_NEXT_PROPERTY;
+        break;
+    default:
+        rc = CC_RET_ERROR;
+        break;
     }
-
-    fdt_pack(fdt);
 
 error_exit:
     cpu_physical_memory_unmap(wa_buf, 0x1024, 1, 0x1024);
