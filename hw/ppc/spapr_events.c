@@ -323,7 +323,7 @@ static void spapr_powerdown_req(Notifier *n, void *opaque)
 }
 
 static void spapr_hotplug_req(uint8_t hp_type, uint8_t hp_action,
-                              sPAPRPHBState *phb)
+                              sPAPRPHBState *phb, int slot)
 {
     struct rtas_error_log *hdr;
     struct rtas_event_log_v6 *v6hdr;
@@ -380,7 +380,7 @@ static void spapr_hotplug_req(uint8_t hp_type, uint8_t hp_action,
 
     switch (hp_type) {
     case RTAS_LOG_V6_HP_TYPE_SLOT:
-	hp->drc.index = drc_entry->drc_index;
+	hp->drc.index = drc_entry->child_entries[slot].drc_index;
         hp->hotplug_identifier = RTAS_LOG_V6_HP_ID_DRC_INDEX;
         break;
     }
@@ -388,20 +388,20 @@ static void spapr_hotplug_req(uint8_t hp_type, uint8_t hp_action,
     qemu_irq_pulse(xics_get_qirq(spapr->icp, spapr->check_exception_irq));
 }
 
-void spapr_pci_hotplug_add(DeviceState *qdev)
+void spapr_pci_hotplug_add(DeviceState *qdev, int slot)
 {
     sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
 
     return spapr_hotplug_req(RTAS_LOG_V6_HP_TYPE_SLOT,
-                             RTAS_LOG_V6_HP_ACTION_ADD, phb);
+                             RTAS_LOG_V6_HP_ACTION_ADD, phb, slot);
 }
 
-void spapr_pci_hotplug_remove(DeviceState *qdev)
+void spapr_pci_hotplug_remove(DeviceState *qdev, int slot)
 {
     sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
 
     return spapr_hotplug_req(RTAS_LOG_V6_HP_TYPE_SLOT,
-                             RTAS_LOG_V6_HP_ACTION_REMOVE, phb);
+                             RTAS_LOG_V6_HP_ACTION_REMOVE, phb, slot);
 }
 
 static void check_exception(PowerPCCPU *cpu, sPAPREnvironment *spapr,

@@ -311,7 +311,7 @@ DrcEntry *spapr_add_phb_to_drc_table(uint64_t buid, uint32_t state)
         empty_drc->child_entries =
             g_malloc0(sizeof(DrcEntry) * SPAPR_DRC_PHB_SLOT_MAX);
         phb_index = buid - SPAPR_PCI_BASE_BUID;
-        for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
+        for (i = 0; i < SPAPR_DRC_PHB_SLOT_MAX; i++) {
             empty_drc->child_entries[i].drc_index =
                 SPAPR_DRC_DEV_ID_BASE + (phb_index << 8) + (i << 3);
         }

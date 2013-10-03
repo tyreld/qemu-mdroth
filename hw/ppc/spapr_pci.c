@@ -767,6 +767,8 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_assert(drc_entry);
     drc_entry_slot = &drc_entry->child_entries[slot];
 
+    g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
+
     /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
     offset = fdt_create(fdt, FDT_MAX_SIZE);
@@ -857,12 +859,12 @@ static int spapr_device_hotplug(DeviceState *qdev, PCIDevice *dev,
         fprintf(stderr, "Hot add of device on slot %d\n", slot);
 
         spapr_phb_add_pci_dt(qdev, dev);
-        spapr_pci_hotplug_add(qdev);
+        spapr_pci_hotplug_add(qdev, slot);
     } else {
         fprintf(stderr, "Hot remove of device on slot %d\n", slot);
 
         spapr_phb_remove_pci_dt(qdev, dev);
-        spapr_pci_hotplug_remove(qdev);
+        spapr_pci_hotplug_remove(qdev, slot);
     }
 
     return 0;
@@ -1153,7 +1155,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = SPAPR_DRC_DEV_ID_BASE + (phb_index << 8) + (i << 3);
+        int_buf[i] = SPAPR_DRC_DEV_ID_BASE + (phb_index << 8) + ((i - 1) << 3);
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,drc-indexes", int_buf,
@@ -1184,7 +1186,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
         offset += sprintf(char_buf + offset, "Slot %d",
-                          (phb_index << 8) + (i << 3));
+                          (phb_index * SPAPR_DRC_PHB_SLOT_MAX) + i - 1);
         char_buf[offset++] = '\0';
     }
 
