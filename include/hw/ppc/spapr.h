@@ -418,6 +418,8 @@ extern struct drc_table_entry drc_table[SPAPR_DRC_TABLE_SIZE];
 struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
                                                    uint32_t state);
 struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid);
+#define SPAPR_DRC_PHB_SLOT_MAX  32
+#define SPAPR_DRC_DEV_ID_BASE   0x40000000
 
 void spapr_pci_hotplug_add(DeviceState *qdev);
 void spapr_pci_hotplug_remove(DeviceState *qdev);
