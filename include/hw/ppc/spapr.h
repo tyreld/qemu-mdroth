@@ -400,28 +400,33 @@ typedef struct ConfigureConnectorState {
     int depth;
     enum {
         CC_STATE_IDLE = 0,
+        CC_STATE_PENDING = 0,
         CC_STATE_ACTIVE,
     } state;
 } ConfigureConnectorState;
 
-struct drc_table_entry {
+typedef struct DrcEntry DrcEntry;
+
+struct DrcEntry {
     uint32_t drc_index;
     uint64_t phb_buid;
     void *fdt;
     int fdt_offset;
     uint32_t state;
     ConfigureConnectorState cc_state;
+    DrcEntry *child_entries;
 };
 
+#define FDT_MAX_SIZE            0x10000
 #define SPAPR_DRC_TABLE_SIZE    32
-extern struct drc_table_entry drc_table[SPAPR_DRC_TABLE_SIZE];
-struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
-                                                   uint32_t state);
-struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid);
 #define SPAPR_DRC_PHB_SLOT_MAX  32
 #define SPAPR_DRC_DEV_ID_BASE   0x40000000
+extern DrcEntry drc_table[SPAPR_DRC_TABLE_SIZE];
+DrcEntry *spapr_add_phb_to_drc_table(uint64_t buid, uint32_t state);
+DrcEntry *spapr_phb_to_drc_entry(uint64_t buid);
+DrcEntry *spapr_find_drc_entry(int drc_index);
 
 void spapr_pci_hotplug_add(DeviceState *qdev);
 void spapr_pci_hotplug_remove(DeviceState *qdev);
-void spapr_load_phb_node(struct drc_table_entry *drc_entry);
+void spapr_load_phb_node(DrcEntry *drc_entry);
 #endif /* !defined (__HW_SPAPR_H__) */

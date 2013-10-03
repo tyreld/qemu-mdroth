@@ -330,7 +330,7 @@ static void spapr_hotplug_req(uint8_t hp_type, uint8_t hp_action,
     struct rtas_event_log_v6_maina *maina;
     struct rtas_event_log_v6_mainb *mainb;
     struct rtas_event_log_v6_hp *hp;
-    struct drc_table_entry *drc_entry;
+    DrcEntry *drc_entry;
 
     if (pending_hp) {
         /* Just toss any pending hotplug events for now, this will

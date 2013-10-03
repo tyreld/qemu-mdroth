@@ -62,7 +62,6 @@
  *
  * We load our kernel at 4M, leaving space for SLOF initial image
  */
-#define FDT_MAX_SIZE            0x10000
 #define RTAS_MAX_SIZE           0x10000
 #define FW_MAX_SIZE             0x400000
 #define FW_FILE_NAME            "slof.bin"
@@ -81,7 +80,7 @@
 #define HTAB_SIZE(spapr)        (1ULL << ((spapr)->htab_shift))
 
 sPAPREnvironment *spapr;
-struct drc_table_entry drc_table[SPAPR_DRC_TABLE_SIZE];
+DrcEntry drc_table[SPAPR_DRC_TABLE_SIZE];
 
 int spapr_allocate_irq(int hint, bool lsi)
 {
@@ -281,12 +280,11 @@ static void spapr_init_drc_table(void)
     }
 }
 
-struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
-                                                   uint32_t state)
+DrcEntry *spapr_add_phb_to_drc_table(uint64_t buid, uint32_t state)
 {
-    struct drc_table_entry *empty_drc = NULL;
-    struct drc_table_entry *found_drc = NULL;
-    int i;
+    DrcEntry *empty_drc = NULL;
+    DrcEntry *found_drc = NULL;
+    int i, phb_index;
 
     for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
         if (drc_table[i].phb_buid == 0) {
@@ -306,19 +304,57 @@ struct drc_table_entry *spapr_add_phb_to_drc_table(uint64_t buid,
     if (empty_drc) {
         empty_drc->phb_buid = buid;
         empty_drc->state = state;
+        empty_drc->cc_state.fdt = NULL;
+        empty_drc->cc_state.offset = 0;
+        empty_drc->cc_state.depth = 0;
+        empty_drc->cc_state.state = CC_STATE_IDLE;
+        empty_drc->child_entries =
+            g_malloc0(sizeof(DrcEntry) * SPAPR_DRC_PHB_SLOT_MAX);
+        phb_index = buid - SPAPR_PCI_BASE_BUID;
+        for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
+            empty_drc->child_entries[i].drc_index =
+                SPAPR_DRC_DEV_ID_BASE + (phb_index << 8) + (i << 3);
+        }
         return empty_drc;
     }
 
     return NULL;
 }
 
-struct drc_table_entry *spapr_phb_to_drc_entry(uint64_t buid)
+DrcEntry *spapr_phb_to_drc_entry(uint64_t buid)
 {
     int i;
 
     for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
         if (drc_table[i].phb_buid == buid) {
             return &drc_table[i];
+        }
+     }
+
+     return NULL;
+}
+
+DrcEntry *spapr_find_drc_entry(int drc_index)
+{
+    /* TODO: for now we search through all the PHBs for the slot entry,
+     * but drc_index should encode the bus/PHB to make this search
+     * more efficient
+     */
+    int i, j;
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        DrcEntry *phb_entry = &drc_table[i];
+        if (phb_entry->drc_index == drc_index) {
+            return phb_entry;
+        }
+        if (phb_entry->child_entries == NULL) {
+            continue;
+        }
+        for (j = 0; j < SPAPR_DRC_PHB_SLOT_MAX; j++) {
+            DrcEntry *entry = &phb_entry->child_entries[j];
+            if (entry->drc_index == drc_index) {
+                return entry;
+            }
         }
      }
 
@@ -396,7 +432,7 @@ static void spapr_create_drc_dt_entries(void *fdt)
     }
 }
 
-void spapr_load_phb_node(struct drc_table_entry *drc_entry)
+void spapr_load_phb_node(DrcEntry *drc_entry)
 {
     int depth;
     int node_offset = 0;
@@ -735,7 +771,7 @@ static void spapr_finalize_fdt(sPAPREnvironment *spapr,
     int ret;
     void *fdt;
     sPAPRPHBState *phb;
-    struct drc_table_entry *drc_entry;
+    DrcEntry *drc_entry;
 
     fdt = g_malloc(FDT_MAX_SIZE);
 

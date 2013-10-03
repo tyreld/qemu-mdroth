@@ -421,7 +421,7 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t indicator = rtas_ld(args, 0);
     uint32_t drc_index = rtas_ld(args, 1);
     uint32_t indicator_state = rtas_ld(args, 2);
-    struct drc_table_entry *drc_entry = NULL;
+    DrcEntry *drc_entry = NULL;
     int i;
 
     switch (indicator) {
@@ -464,7 +464,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t sensor = rtas_ld(args, 0);
     uint32_t drc_index = rtas_ld(args, 0);
     uint32_t sensor_state = 0;
-    struct drc_table_entry *drc_entry = NULL;
+    DrcEntry *drc_entry = NULL;
     int i;
 
     switch (sensor) {
@@ -579,13 +579,13 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
                                          target_ulong rets)
 {
     uint64_t wa_addr = ((uint64_t)rtas_ld(args, 1) << 32) | rtas_ld(args, 0);
-    struct drc_table_entry *drc_entry = NULL;
+    DrcEntry *drc_entry = NULL;
     ConfigureConnectorState *ccs;
     void *wa_buf;
     int32_t *wa_buf_int;
     hwaddr map_len = 0x1024;
     uint32_t drc_index;
-    int i, rc, next_offset, tag, prop_len, node_name_len;
+    int rc = 0, next_offset, tag, prop_len, node_name_len;
     const struct fdt_property *prop;
     const char *node_name, *prop_name;
 
@@ -602,37 +602,33 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
      * properties until that 2nd phase?
      */
     drc_index = *(uint32_t *)wa_buf;
-    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
-        if (drc_table[i].drc_index == drc_index) {
-            drc_entry = &drc_table[i];
-            ccs = &drc_entry->cc_state;
-            break;
-        }
-    }
-
+    drc_entry = spapr_find_drc_entry(drc_index);
     if (!drc_entry) {
         rc = -1;
         goto error_exit;
     }
 
-    /* fdt should've been been attached to drc_entry during realize/hotplug */
-    spapr_load_phb_node(drc_entry);
-    g_assert(drc_entry->fdt);
-
-    if (ccs->state == CC_STATE_IDLE) {
-        ccs->fdt = drc_entry->fdt;
-        ccs->offset = drc_entry->fdt_offset;
+    ccs = &drc_entry->cc_state;
+    g_warning("ccs->state: %d", ccs->state);
+    if (ccs->state == CC_STATE_PENDING) {
+        /* fdt should've been been attached to drc_entry during realize/hotplug */
+        g_assert(ccs->fdt);
+        ccs->offset = 0;
         ccs->depth = 0;
         ccs->state = CC_STATE_ACTIVE;
     }
 
+retry:
     tag = fdt_next_tag(ccs->fdt, ccs->offset, &next_offset);
-    ccs->offset = next_offset;
+    g_warning("tag: %d", tag);
 
     switch (tag) {
     case FDT_BEGIN_NODE:
         ccs->depth++;
         node_name = fdt_get_name(ccs->fdt, ccs->offset, &node_name_len);
+        g_warning("node_name_len: %d", node_name_len);
+        g_warning("node_name: %s", node_name);
+        g_warning("node depth: %d", ccs->depth);
         wa_buf_int[CC_IDX_NODE_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
         strcpy(wa_buf + wa_buf_int[CC_IDX_NODE_NAME_OFFSET], node_name);
         rc = CC_RET_NEXT_CHILD;
@@ -641,7 +637,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         ccs->depth--;
         if (ccs->depth == 0) {
             /* reached the end of top-level node, declare success */
-            ccs->state = CC_STATE_IDLE;
+            ccs->state = CC_STATE_PENDING;
             rc = CC_RET_SUCCESS;
         } else {
             rc = CC_RET_PREV_PARENT;
@@ -650,6 +646,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
     case FDT_PROP:
         prop = fdt_get_property_by_offset(ccs->fdt, ccs->offset, &prop_len);
         prop_name = fdt_string(ccs->fdt, fdt32_to_cpu(prop->nameoff));
+        g_warning("prop_name: %s, prop_len: %d", prop_name, prop_len);
         wa_buf_int[CC_IDX_PROP_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
         wa_buf_int[CC_IDX_PROP_LEN] = prop_len;
         wa_buf_int[CC_IDX_PROP_DATA_OFFSET] =
@@ -660,10 +657,15 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
                prop->data, prop_len);
         rc = CC_RET_NEXT_PROPERTY;
         break;
-    default:
+    case FDT_END:
         rc = CC_RET_ERROR;
         break;
+    default:
+        ccs->offset = next_offset;
+        goto retry;
     }
+
+    ccs->offset = next_offset;
 
 error_exit:
     cpu_physical_memory_unmap(wa_buf, 0x1024, 1, 0x1024);
@@ -746,82 +748,93 @@ void spapr_pci_msi_init(sPAPREnvironment *spapr, hwaddr addr)
 static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 {
     sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
-    struct drc_table_entry *drc_entry;
+    DrcEntry *drc_entry, *drc_entry_slot;
+    ConfigureConnectorState *ccs;
+    int slot = PCI_SLOT(dev->devfn);
     void *fdt;
     char nodename[512];
     int offset;
 
     /* TODO: for now we assume a DT node was created for this PHB as part
      * of machine realization. when we add support for hotplugging PHBs,
-     * we'll need to create the PHB DT node and add it to drc_table some
-     * time prior to adding the node for the actual PCIDevice here.
-     * configure_connector will act on the entire PHB DT, and so should
-     * be agnostic to such changes.
+     * we'll need to create the PHB DT node here and skip PCI device bits.
+     * How we map the PCIDevice to creating a new PCIHostState is left as
+     * an exercise for the reader... do we need a bus_add hotplug
+     * interface? Alternative we can create a new PHB for each device,
+     * but that may have other limitations/issues.
      */
     drc_entry = spapr_phb_to_drc_entry(phb->buid);
     g_assert(drc_entry);
-    spapr_load_phb_node(drc_entry);
-    g_assert(drc_entry->fdt);
-    fdt = drc_entry->fdt;
-    offset = drc_entry->fdt_offset;
-
-    g_warning("INITIAL FDT");
-    print_fdt(drc_entry->fdt, drc_entry->fdt_offset, -1);
+    drc_entry_slot = &drc_entry->child_entries[slot];
 
     /* add OF node for pci device and required OF DT properties */
+    fdt = g_malloc0(FDT_MAX_SIZE);
+    offset = fdt_create(fdt, FDT_MAX_SIZE);
     sprintf(nodename, "pci@%" PRIx64, (long unsigned)1024);
-    offset = fdt_add_subnode(fdt, drc_entry->fdt_offset, nodename);
+    offset = fdt_begin_node(fdt, nodename);
     /* TODO: check endianess */
-    _FDT(fdt_setprop_cell(fdt, offset, "vendor-id",
-                          pci_default_read_config(dev, PCI_VENDOR_ID, 2)));
-    _FDT(fdt_setprop_cell(fdt, offset, "device-id",
+    _FDT(fdt_property_cell(fdt, "vendor-id",
+                           pci_default_read_config(dev, PCI_VENDOR_ID, 2)));
+    _FDT(fdt_property_cell(fdt, "device-id",
                           pci_default_read_config(dev, PCI_DEVICE_ID, 2)));
-    _FDT(fdt_setprop_cell(fdt, offset, "revision-id",
+    _FDT(fdt_property_cell(fdt, "revision-id",
                           pci_default_read_config(dev, PCI_REVISION_ID, 1)));
-    _FDT(fdt_setprop_cell(fdt, offset, "class-code",
+    _FDT(fdt_property_cell(fdt, "class-code",
                           pci_default_read_config(dev, PCI_CLASS_DEVICE, 2)));
 
     /* NB: interrupts may not be returned for all devices - ? */
-    _FDT(fdt_setprop_cell(fdt, offset, "interrupts",
+    _FDT(fdt_property_cell(fdt, "interrupts",
                           pci_default_read_config(dev, PCI_CLASS_DEVICE, 2)));
-    
-    /* if this device is NOT a bridge */ 
-    if (PCI_HEADER_TYPE_NORMAL == 
+
+    /* if this device is NOT a bridge */
+    if (PCI_HEADER_TYPE_NORMAL ==
         pci_default_read_config(dev, PCI_HEADER_TYPE, 1)) {
-        
-        _FDT(fdt_setprop_cell(fdt, offset, "min-grant",
+
+        _FDT(fdt_property_cell(fdt, "min-grant",
                       pci_default_read_config(dev, PCI_MIN_GNT, 1)));
-        _FDT(fdt_setprop_cell(fdt, offset, "max-latency",
+        _FDT(fdt_property_cell(fdt, "max-latency",
                       pci_default_read_config(dev, PCI_MAX_LAT, 1)));
-        _FDT(fdt_setprop_cell(fdt, offset, "subsystem-id",
+        _FDT(fdt_property_cell(fdt, "subsystem-id",
                       pci_default_read_config(dev, PCI_SUBSYSTEM_ID, 2)));
-        _FDT(fdt_setprop_cell(fdt, offset, "subsystem-vendor-id",
+        _FDT(fdt_property_cell(fdt, "subsystem-vendor-id",
                       pci_default_read_config(dev, PCI_SUBSYSTEM_VENDOR_ID, 2)));
     }
-    
-    _FDT(fdt_setprop_cell(fdt, offset, "cache-line-size",
+
+    _FDT(fdt_property_cell(fdt, "cache-line-size",
                           pci_default_read_config(dev, PCI_CACHE_LINE_SIZE, 1)));
-    
+
     /* the following fdt cells are masked off the pci status register */
     int pci_status = pci_default_read_config(dev, PCI_STATUS, 2);
-    _FDT(fdt_setprop_cell(fdt, offset, "devsel-speed", 
+    _FDT(fdt_property_cell(fdt, "devsel-speed",
                           PCI_STATUS_DEVSEL_MASK & pci_status));
-    _FDT(fdt_setprop_cell(fdt, offset, "fast-back-to-back", 
+    _FDT(fdt_property_cell(fdt, "fast-back-to-back",
                           PCI_STATUS_FAST_BACK & pci_status));
-    _FDT(fdt_setprop_cell(fdt, offset, "66mhz-capable", 
+    _FDT(fdt_property_cell(fdt, "66mhz-capable",
                           PCI_STATUS_66MHZ & pci_status));
-    _FDT(fdt_setprop_cell(fdt, offset, "66mhz-capable", 
+    _FDT(fdt_property_cell(fdt, "66mhz-capable",
                           PCI_STATUS_UDF & pci_status));
 
     /* end of pci status register fdt cells */
 
+    _FDT(fdt_property(fdt, "ibm,my-drc-index",
+                      &drc_entry_slot->drc_index,
+                      sizeof(drc_entry_slot->drc_index)));
+    fdt_end_node(fdt);
+    fdt_finish(fdt);
+
+    /* hold on to the node, configure_connector will pass it to the guest
+     * later
+     */
+    ccs = &drc_entry_slot->cc_state;
+    ccs->fdt = fdt;
+    ccs->offset = offset;
+    ccs->state = CC_STATE_PENDING;
+
     g_warning("NEW FDT");
-    print_fdt(drc_entry->fdt, drc_entry->fdt_offset, -1);
+    print_fdt(fdt, offset, -1);
 
     /* need to allocate memory region for device BARs */
 
-
-    
     return 0;
 }
 
