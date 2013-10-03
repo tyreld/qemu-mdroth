@@ -50,6 +50,7 @@
     do { \
         int ret = (exp);                                           \
         if (ret < 0) {                                             \
+            g_warning("fdt error: %d", ret);                       \
             return ret;                                            \
         }                                                          \
     } while (0)
