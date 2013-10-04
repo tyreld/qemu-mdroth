@@ -821,6 +821,12 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
 
+
+    /* map memory region for device BARs */
+    if (-1 == spapr_map_BARs(phb, dev)) {
+        return -1;
+    }
+
     /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
     offset = fdt_create(fdt, FDT_MAX_SIZE);
@@ -873,6 +879,12 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     _FDT(fdt_property(fdt, "ibm,my-drc-index",
                       &drc_entry_slot->drc_index,
                       sizeof(drc_entry_slot->drc_index)));
+
+    char dev_fw_name_buf[32];
+    sprintf(dev_fw_name_buf, "unknown\n");
+    char *namep = pci_dev_fw_name(&dev->qdev, dev_fw_name_buf, 31);
+    _FDT(fdt_property_string(fdt, "name", namep));
+
     fdt_end_node(fdt);
     fdt_finish(fdt);
 
@@ -886,8 +898,6 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     g_warning("NEW FDT");
     print_fdt(fdt, offset, -1);
-
-    /* need to allocate memory region for device BARs */
 
     return 0;
 }
