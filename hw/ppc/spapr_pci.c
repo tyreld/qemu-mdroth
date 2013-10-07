@@ -745,6 +745,47 @@ void spapr_pci_msi_init(sPAPREnvironment *spapr, hwaddr addr)
  * PHB PCI device
  */
 
+/* for 'reg'/'assigned-addresses' OF properties */
+#define RESOURCE_CELLS_SIZE 2
+#define RESOURCE_CELLS_ADDRESS 3
+#define RESOURCE_CELLS_TOTAL \
+    (RESOURCE_CELLS_SIZE + RESOURCE_CELLS_ADDRESS)
+
+static void fill_resource_props(PCIDevice *d, int bus_num,
+                                uint32_t *reg, int *reg_size,
+                                uint32_t *assigned, int *assigned_size)
+{
+    uint32_t *reg_row, *assigned_row;
+    uint32_t dev_id = ((bus_num << 8) |
+                        (PCI_SLOT(d->devfn) << 3) | PCI_FUNC(d->devfn));
+    int i, idx = 0;
+
+    reg[0] = dev_id << 8;
+
+    for (i = 0; i < PCI_NUM_REGIONS; i++) {
+        if (!d->io_regions[i].size) {
+            continue;
+        }
+        reg_row = &reg[(idx + 1) * RESOURCE_CELLS_TOTAL];
+        assigned_row = &assigned[idx * RESOURCE_CELLS_TOTAL];
+        reg_row[0] = (dev_id << 8) | (pci_bar(d, i) & 0xff);
+        if (d->io_regions[i].type & PCI_BASE_ADDRESS_SPACE_IO) {
+            reg_row[0] |= 0x01000000;
+        } else {
+            reg_row[0] |= 0x02000000;
+        }
+        assigned_row[0] = reg_row[0] | 0x80000000;
+        assigned_row[3] = reg_row[3] = d->io_regions[i].size >> 32;
+        assigned_row[4] = reg_row[4] = d->io_regions[i].size;
+        assigned_row[1] = d->io_regions[i].addr >> 32;
+        assigned_row[2] = d->io_regions[i].addr;
+        idx++;
+    }
+
+    *reg_size = (idx + 1) * RESOURCE_CELLS_TOTAL * sizeof(uint32_t);
+    *assigned_size = idx * RESOURCE_CELLS_TOTAL * sizeof(uint32_t);
+}
+
 static hwaddr spapr_find_bar_addr(sPAPRPHBState *phb, PCIIORegion *r)
 {
     MemoryRegionSection mrs = { 0 };
@@ -767,6 +808,7 @@ static hwaddr spapr_find_bar_addr(sPAPRPHBState *phb, PCIIORegion *r)
 
     do {
         mrs = memory_region_find_subregion(r->address_space, search_addr, size);
+        g_warning("current mrs offset: %lx", mrs.offset_within_address_space);
         if (mrs.mr) {
             hwaddr mr_last_addr;
             mr_last_addr = mrs.mr->addr + memory_region_size(mrs.mr) - 1;
@@ -865,6 +907,9 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     void *fdt;
     char nodename[512];
     int offset;
+    uint32_t reg[RESOURCE_CELLS_TOTAL * 8] = { 0 };
+    uint32_t assigned[RESOURCE_CELLS_TOTAL * 8] = { 0 };
+    int reg_size, assigned_size;
 
     /* TODO: for now we assume a DT node was created for this PHB as part
      * of machine realization. when we add support for hotplugging PHBs,
@@ -883,7 +928,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
     offset = fdt_create(fdt, FDT_MAX_SIZE);
-    sprintf(nodename, "pci@%" PRIx64, (long unsigned)1024);
+    sprintf(nodename, "pci@%d", slot);
     offset = fdt_begin_node(fdt, nodename);
     /* TODO: check endianess */
     _FDT(fdt_property_cell(fdt, "vendor-id",
@@ -897,7 +942,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     /* NB: interrupts may not be returned for all devices - ? */
     _FDT(fdt_property_cell(fdt, "interrupts",
-                          pci_default_read_config(dev, PCI_CLASS_DEVICE, 2)));
+                           pci_default_read_config(dev, PCI_CLASS_DEVICE, 2)));
 
     /* if this device is NOT a bridge */
     if (PCI_HEADER_TYPE_NORMAL ==
@@ -924,16 +969,30 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
                           PCI_STATUS_FAST_BACK & pci_status));
     _FDT(fdt_property_cell(fdt, "66mhz-capable",
                           PCI_STATUS_66MHZ & pci_status));
-    _FDT(fdt_property_cell(fdt, "66mhz-capable",
+    _FDT(fdt_property_cell(fdt, "udf-supported",
                           PCI_STATUS_UDF & pci_status));
 
     /* end of pci status register fdt cells */
+    _FDT(fdt_property_string(fdt, "name", "pci"));
 
     _FDT(fdt_property(fdt, "ibm,my-drc-index",
                       &drc_entry_slot->drc_index,
                       sizeof(drc_entry_slot->drc_index)));
+
+    /* need to allocate memory region for device BARs */
+    spapr_map_BARs(phb, dev);
+
+    _FDT(fdt_property_cell(fdt, "#address-cells", RESOURCE_CELLS_ADDRESS));
+    _FDT(fdt_property_cell(fdt, "#size-cells", RESOURCE_CELLS_SIZE));
+    fill_resource_props(dev, phb->index, reg, &reg_size,
+                        assigned, &assigned_size);
+    _FDT(fdt_property(fdt, "reg", reg, reg_size));
+    _FDT(fdt_property(fdt, "assigned-addresses", assigned, assigned_size));
+
     fdt_end_node(fdt);
     fdt_finish(fdt);
+    g_warning("NEW FDT");
+    print_fdt(fdt, offset, -1);
 
     /* hold on to the node, configure_connector will pass it to the guest
      * later
@@ -943,11 +1002,6 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     ccs->offset = offset;
     ccs->state = CC_STATE_PENDING;
 
-    g_warning("NEW FDT");
-    print_fdt(fdt, offset, -1);
-
-    /* need to allocate memory region for device BARs */
-    spapr_map_BARs(phb, dev);
     return 0;
 }
 
