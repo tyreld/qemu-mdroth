@@ -808,7 +808,6 @@ static hwaddr spapr_find_bar_addr(sPAPRPHBState *phb, PCIIORegion *r)
 
     do {
         mrs = memory_region_find_subregion(r->address_space, search_addr, size);
-        g_warning("current mrs offset: %lx", mrs.offset_within_address_space);
         if (mrs.mr) {
             hwaddr mr_last_addr;
             mr_last_addr = mrs.mr->addr + memory_region_size(mrs.mr) - 1;
@@ -845,7 +844,7 @@ static int spapr_map_BARs(sPAPRPHBState *phb, PCIDevice *dev)
 
     for (i = 0; i < PCI_NUM_REGIONS; i++) {
         uint32_t bar_address = pci_bar(dev, i);
-        uint32_t bar_value_mask, bar_value;
+        uint32_t bar_value;
         uint16_t cmd_value = pci_default_read_config(dev, PCI_COMMAND, 2);
         hwaddr addr;
 
