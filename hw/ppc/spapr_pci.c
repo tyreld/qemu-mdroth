@@ -456,6 +456,16 @@ static void rtas_set_power_level(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     rtas_st(rets, 1, power_lvl);
 }
 
+static void rtas_get_power_level(PowerPCCPU *cpu, sPAPREnvironment *spapr,
+                                  uint32_t token, uint32_t nargs,
+                                  target_ulong args, uint32_t nret,
+                                  target_ulong rets)
+{
+    /* return SUCCESS with a power level of 100 */
+    rtas_st(rets, 0, 0);
+    rtas_st(rets, 1, 100);
+}
+
 static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                                   uint32_t token, uint32_t nargs,
                                   target_ulong args, uint32_t nret,
@@ -1475,6 +1485,7 @@ void spapr_pci_rtas_init(void)
     }
     spapr_rtas_register("set-indicator", rtas_set_indicator);
     spapr_rtas_register("set-power-level", rtas_set_power_level);
+    spapr_rtas_register("get-power-level", rtas_get_power_level);
     spapr_rtas_register("get-sensor-state", rtas_get_sensor_state);
     spapr_rtas_register("ibm,configure-connector",
                         rtas_ibm_configure_connector);
