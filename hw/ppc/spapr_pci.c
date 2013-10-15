@@ -424,21 +424,21 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     DrcEntry *drc_entry = NULL;
     int i;
 
-    switch (indicator) {
-    case 9001: /* Isolation state */
+    if (indicator == 9001 || indicator == 9003) {
         for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
             if (drc_table[i].drc_index == drc_index) {
                 drc_entry = &drc_table[i];
                 break;
             }
         }
+    }
 
+    switch (indicator) {
+    case 9001: /* Isolation state */
+    case 9003: /* Allocation State */
         if (drc_entry) {
             drc_entry->state = indicator_state;
         }
-        break;
-
-    case 9003: /* Allocation State */
         break;
     }
 
@@ -501,8 +501,6 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     }
 
     rtas_st(rets, 0, 0);
-    /* TODO: force this so drmgr doesn't complain, fix this properly soon */
-    sensor_state = 2;
     rtas_st(rets, 1, sensor_state);
 }
 
@@ -1350,7 +1348,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = 0xffffffff;
+        int_buf[i] = i;
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,drc-power-domains", int_buf,
@@ -1391,6 +1389,35 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     if (ret) {
         g_warning("error adding 'ibm,drc-types' field for PHB FDT");
     }
+
+    /* ibm,indicator-9003 */
+    memset(int_buf, 0, sizeof(int_buf));
+    int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
+
+    for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
+        int_buf[i] = 1; /* usable */
+    }
+
+    ret = fdt_setprop(fdt, bus_off, "ibm,indicator-9003", int_buf,
+                      sizeof(int_buf));
+    if (ret) {
+        g_warning("error adding 'ibm,indicator-9003' field for PHB FDT");
+    }
+
+    /* ibm,sensor-9003 */
+    memset(int_buf, 0, sizeof(int_buf));
+    int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
+
+    for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
+        int_buf[i] = 0; /* usable - empty */
+    }
+
+    ret = fdt_setprop(fdt, bus_off, "ibm,sensor-9003", int_buf,
+                      sizeof(int_buf));
+    if (ret) {
+        g_warning("error adding 'ibm,sensor-9003' field for PHB FDT");
+    }
+
 }
 
 
