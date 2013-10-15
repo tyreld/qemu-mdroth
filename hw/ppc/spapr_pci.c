@@ -450,8 +450,10 @@ static void rtas_set_power_level(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                                  target_ulong args, uint32_t nret,
                                  target_ulong rets)
 {
-    uint32_t power_lvl = rtas_ld(args, 0);
-
+    uint32_t power_domain = rtas_ld(args, 0);
+    uint32_t power_lvl = rtas_ld(args, 1);
+    g_warning("rtas-set-power-level domain: %d, level: %d\n",
+              power_domain, power_lvl);
     rtas_st(rets, 0, 0);
     rtas_st(rets, 1, power_lvl);
 }
@@ -461,6 +463,11 @@ static void rtas_get_power_level(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                                   target_ulong args, uint32_t nret,
                                   target_ulong rets)
 {
+
+    uint32_t power_domain = rtas_ld(args, 0);
+    g_warning("rtas-get-power-level domain: %d\n",
+              power_domain);
+
     /* return SUCCESS with a power level of 100 */
     rtas_st(rets, 0, 0);
     rtas_st(rets, 1, 100);
