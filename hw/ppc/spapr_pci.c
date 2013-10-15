@@ -1376,7 +1376,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     offset = sizeof(*entries);
 
     for (i = 0; i < SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        offset += sprintf(char_buf + offset, "SLOT");
+        offset += sprintf(char_buf + offset, "28");
         char_buf[offset++] = '\0';
     }
 
