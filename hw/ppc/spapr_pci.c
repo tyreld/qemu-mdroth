@@ -484,6 +484,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     DrcEntry *drc_entry = NULL;
     int i;
 
+    g_warning("rtas_get_sensor_state: sensor %d", sensor);
     switch (sensor) {
     case 9003: /* DR-Entity-Sense */
         for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
@@ -495,6 +496,8 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
 
         if (drc_entry) {
             sensor_state = drc_entry->state;
+            g_warning("rtas_get_sensor_state: sensor state %d",
+                      drc_entry->state);
         }
 
         break;
