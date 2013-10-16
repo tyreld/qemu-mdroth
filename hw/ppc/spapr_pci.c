@@ -940,6 +940,11 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
     g_warning("pci slot = %d", slot);
 
+    drc_entry_slot->state = 1; /* DR entity present */
+    g_warning("pci slot %d, index %x, state %d", slot,
+              drc_entry_slot->drc_index,
+              drc_entry_slot->state);
+
 /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
     offset = fdt_create(fdt, FDT_MAX_SIZE);
