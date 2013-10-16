@@ -422,17 +422,11 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t drc_index = rtas_ld(args, 1);
     uint32_t indicator_state = rtas_ld(args, 2);
     DrcEntry *drc_entry = NULL;
-    int i;
-
     if (indicator == 9001 || indicator == 9003) {
-        for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
-            if (drc_table[i].drc_index == drc_index) {
-                drc_entry = &drc_table[i];
-                break;
-            }
-        }
+        drc_entry = spapr_find_drc_entry(drc_index);
     }
-
+    g_warning("rtas_set_indicator: drc_entry %p @ index: %x",
+              drc_entry, drc_index);
     switch (indicator) {
     case 9001: /* Isolation state */
     case 9003: /* Allocation State */
@@ -441,7 +435,6 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
         }
         break;
     }
-
     rtas_st(rets, 0, 0);
 }
 
@@ -482,7 +475,6 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t drc_index = rtas_ld(args, 1);
     uint32_t sensor_state = 0;
     DrcEntry *drc_entry = NULL;
-    int i;
 
     g_warning("rtas_get_sensor_state: sensor %d index %x", sensor, drc_index);
 
@@ -493,26 +485,17 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                   sensor_state);
         break;
     case 9003: /* DR-Entity-Sense */
-        for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
-            if (drc_table[i].drc_index == drc_index) {
-                g_warning("search index: %x", drc_table[i].drc_index);
-                drc_entry = &drc_table[i];
-                break;
-            }
-        }
+        drc_entry = spapr_find_drc_entry(drc_index);
         if (!drc_entry) {
             g_warning("unable to find DRC entry for index %x", drc_index);
-        }
-         if (drc_entry) {
+            sensor_state = 1; /* present */
+        } else {
             sensor_state = drc_entry->state;
-            g_warning("rtas_get_sensor_state: sensor state %d",
-                      sensor_state);
-         } else {
-             sensor_state = 1; /* present */
-         }
+        }
+        g_warning("rtas_get_sensor_state: sensor state %d",
+                  sensor_state);
         break;
     }
-
     rtas_st(rets, 0, 0);
     rtas_st(rets, 1, sensor_state);
 }
