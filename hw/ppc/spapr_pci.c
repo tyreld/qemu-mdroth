@@ -495,6 +495,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     case 9003: /* DR-Entity-Sense */
         for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
             if (drc_table[i].drc_index == drc_index) {
+                g_warning("search index: %x", drc_table[i].drc_index);
                 drc_entry = &drc_table[i];
                 break;
             }
@@ -506,7 +507,9 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
             sensor_state = drc_entry->state;
             g_warning("rtas_get_sensor_state: sensor state %d",
                       sensor_state);
-        }
+         } else {
+             sensor_state = 1; /* present */
+         }
         break;
     }
 
