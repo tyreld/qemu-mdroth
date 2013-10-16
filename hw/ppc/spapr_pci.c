@@ -485,21 +485,33 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     int i;
 
     g_warning("rtas_get_sensor_state: sensor %d", sensor);
-    switch (sensor) {
-    case 9003: /* DR-Entity-Sense */
-        for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
-            if (drc_table[i].drc_index == drc_index) {
-                drc_entry = &drc_table[i];
-                break;
-            }
-        }
 
+
+    for (i = 0; i < SPAPR_DRC_TABLE_SIZE; i++) {
+        if (drc_table[i].drc_index == drc_index) {
+            drc_entry = &drc_table[i];
+            break;
+        }
+    }
+
+    if (!drc_entry) {
+        g_warning("unable to find DRC entry for index %x", drc_index);
+    }
+
+    switch (sensor) {
+    case 9: /* EPOW */
         if (drc_entry) {
+            sensor_state = 11; /* normal */
+            g_warning("rtas_get_sensor_state: sensor state %d",
+                      sensor_state);
+        }
+        break;
+    case 9003: /* DR-Entity-Sense */
+         if (drc_entry) {
             sensor_state = drc_entry->state;
             g_warning("rtas_get_sensor_state: sensor state %d",
-                      drc_entry->state);
+                      sensor_state);
         }
-
         break;
     }
 
