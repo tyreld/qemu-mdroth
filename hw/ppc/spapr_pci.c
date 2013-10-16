@@ -936,7 +936,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
     g_warning("pci slot = %d", slot);
 
-    drc_entry_slot->state = 1; /* DR entity present */
+    drc_entry_slot->state = 3; /* DR entity available for exchange */
     g_warning("pci slot %d, index %x, state %d", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
