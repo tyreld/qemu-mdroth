@@ -479,7 +479,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                                   target_ulong rets)
 {
     uint32_t sensor = rtas_ld(args, 0);
-    uint32_t drc_index = rtas_ld(args, 0);
+    uint32_t drc_index = rtas_ld(args, 1);
     uint32_t sensor_state = 0;
     DrcEntry *drc_entry = NULL;
     int i;
