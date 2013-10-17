@@ -956,8 +956,11 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     if (drc_entry_slot->fdt == NULL) {
         g_warning("drc_entry_slot does not have a device tree node");
     }
+    if (drc_entry->fdt == NULL) {
+        g_warning("drc_entry does not have a device tree node");
+    }
 
-    const char *slotname = fdt_get_name(drc_entry_slot->fdt, 0, &namelen);
+    const char *slotname = fdt_get_name(drc_entry->fdt, 0, &namelen);
     g_warning("slot name: %s", slotname ? slotname : "null");
 
     if (slotname) {
@@ -1045,14 +1048,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 */
 
     if (!is_bridge) {
-        DrcEntry *drc_dev = g_malloc0(sizeof(DrcEntry));
-        g_warning("creating a new DrcEntry for hot plug device\n");
-        /* NB: not sure if we need a unique index for the adaptor */
-        drc_dev->drc_index = drc_entry->drc_index;
-        drc_dev->phb_buid = phb->buid;
-        drc_dev->fdt = fdt;
-        drc_dev->state = 1;
-        drc_entry_slot->child_entries = drc_dev;
+        drc_entry_slot->fdt = fdt;
     }
 
     return 0;
