@@ -627,6 +627,8 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         ccs->offset = 0;
         ccs->depth = 0;
         ccs->state = CC_STATE_ACTIVE;
+        /* NB: detach fdt here and re-attach it to the slot? */
+
     }
 
 retry:
@@ -912,14 +914,14 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 {
     sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
     DrcEntry *drc_entry, *drc_entry_slot;
-    ConfigureConnectorState *ccs;
+/*     ConfigureConnectorState *ccs; */
     int slot = PCI_SLOT(dev->devfn);
     void *fdt;
     char nodename[512];
-    int offset;
     uint32_t reg[RESOURCE_CELLS_TOTAL * 8] = { 0 };
     uint32_t assigned[RESOURCE_CELLS_TOTAL * 8] = { 0 };
-    int reg_size, assigned_size;
+    int offset, reg_size, assigned_size;
+    bool is_bridge = 1;
 
     /* TODO: for now we assume a DT node was created for this PHB as part
      * of machine realization. when we add support for hotplugging PHBs,
@@ -936,7 +938,13 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
     g_warning("pci slot = %d", slot);
 
-    drc_entry_slot->state = 3; /* DR entity available for exchange */
+    if (PCI_HEADER_TYPE_NORMAL ==
+        pci_default_read_config(dev, PCI_HEADER_TYPE, 1)) {
+        is_bridge = 0;
+    }
+
+    /* NB: move this to PCI_HEADER_NORMAL block? */
+    drc_entry_slot->state = 1; /* DR entity present */
     g_warning("pci slot %d, index %x, state %d", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
@@ -961,9 +969,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
                            pci_default_read_config(dev, PCI_CLASS_DEVICE, 2)));
 
     /* if this device is NOT a bridge */
-    if (PCI_HEADER_TYPE_NORMAL ==
-        pci_default_read_config(dev, PCI_HEADER_TYPE, 1)) {
-
+    if (!is_bridge) {
         _FDT(fdt_property_cell(fdt, "min-grant",
                       pci_default_read_config(dev, PCI_MIN_GNT, 1)));
         _FDT(fdt_property_cell(fdt, "max-latency",
@@ -1010,13 +1016,27 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_warning("NEW FDT");
     print_fdt(fdt, offset, -1);
 
+
     /* hold on to the node, configure_connector will pass it to the guest
      * later
      */
+/* NB: configure_connector is not getting called in the hotplug path
     ccs = &drc_entry_slot->cc_state;
     ccs->fdt = fdt;
     ccs->offset = offset;
     ccs->state = CC_STATE_PENDING;
+*/
+
+    if (!is_bridge) {
+        DrcEntry *drc_dev = g_malloc0(sizeof(DrcEntry));
+        g_warning("creating a new DrcEntry for hot plug device\n");
+        /* NB: not sure if we need a unique index for the adaptor */
+        drc_dev->drc_index = drc_entry->drc_index;
+        drc_dev->phb_buid = phb->buid;
+        drc_dev->fdt = fdt;
+        drc_dev->state = 1;
+        drc_entry_slot->child_entries = drc_dev;
+    }
 
     return 0;
 }
