@@ -935,8 +935,8 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     g_assert(drc_entry);
     drc_entry_slot = &drc_entry->child_entries[slot];
 
-    g_warning("drc_entry_slot index = %d", drc_entry_slot->drc_index);
-    g_warning("pci slot = %d", slot);
+    g_warning("drc_entry_slot index = %x", drc_entry_slot->drc_index);
+    g_warning("pci slot = %x", slot);
 
     if (PCI_HEADER_TYPE_NORMAL ==
         pci_default_read_config(dev, PCI_HEADER_TYPE, 1)) {
@@ -945,7 +945,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     /* NB: move this to PCI_HEADER_NORMAL block? */
     drc_entry_slot->state = 1; /* DR entity present */
-    g_warning("pci slot %d, index %x, state %d", slot,
+    g_warning("pci slot %x, index %x, state %x", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
 
@@ -953,6 +953,10 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     sprintf(nodename, "pci@%d", slot);
     int namelen;
+    if (drc_entry_slot->fdt == NULL) {
+        g_warning("drc_entry_slot does not have a device tree node");
+    }
+
     const char *slotname = fdt_get_name(drc_entry_slot->fdt, 0, &namelen);
     g_warning("slot name: %s", slotname ? slotname : "null");
 
