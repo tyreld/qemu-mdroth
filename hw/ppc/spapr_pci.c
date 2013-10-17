@@ -949,10 +949,23 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
 
+    /* find the offset for the new node in the slot fdt */
+
+    sprintf(nodename, "pci@%d", slot);
+    int namelen;
+    const char *slotname = fdt_get_name(drc_entry_slot->fdt, 0, &namelen);
+    g_warning("slot name: %s", slotname ? slotname : "null");
+
+    if (slotname) {
+        offset = fdt_path_offset(drc_entry_slot->fdt, slotname);
+        g_warning("offset of slot name: %d", offset);
+        offset = fdt_add_subnode(drc_entry_slot->fdt, offset, nodename);
+        g_warning("subnode offset: %d", offset);
+    }
+
 /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
     offset = fdt_create(fdt, FDT_MAX_SIZE);
-    sprintf(nodename, "pci@%d", slot);
     offset = fdt_begin_node(fdt, nodename);
     /* TODO: check endianess */
     _FDT(fdt_property_cell(fdt, "vendor-id",
