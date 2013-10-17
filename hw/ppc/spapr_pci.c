@@ -952,7 +952,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     /* find the offset for the new node in the slot fdt */
 
     sprintf(nodename, "pci@%d", slot);
-    int namelen;
+
     if (drc_entry_slot->fdt == NULL) {
         g_warning("drc_entry_slot does not have a device tree node");
     }
@@ -960,15 +960,15 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
         g_warning("drc_entry does not have a device tree node");
     }
 
-    const char *slotname = fdt_get_name(drc_entry->fdt, 0, &namelen);
-    g_warning("slot name: %s", slotname ? slotname : "null");
+    /* const char *slotname = fdt_get_name(drc_entry->fdt, 0, &namelen); */
+    /* g_warning("slot name: %s", slotname ? slotname : "null"); */
 
-    if (slotname) {
-        offset = fdt_path_offset(drc_entry_slot->fdt, slotname);
-        g_warning("offset of slot name: %d", offset);
-        offset = fdt_add_subnode(drc_entry_slot->fdt, offset, nodename);
-        g_warning("subnode offset: %d", offset);
-    }
+    /* if (slotname) { */
+    /*     offset = fdt_path_offset(drc_entry_slot->fdt, slotname); */
+    /*     g_warning("offset of slot name: %d", offset); */
+    /*     offset = fdt_add_subnode(drc_entry_slot->fdt, offset, nodename); */
+    /*     g_warning("subnode offset: %d", offset); */
+    /* } */
 
 /* add OF node for pci device and required OF DT properties */
     fdt = g_malloc0(FDT_MAX_SIZE);
