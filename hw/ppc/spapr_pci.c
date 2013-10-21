@@ -944,7 +944,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     }
 
     /* NB: move this to PCI_HEADER_NORMAL block? */
-    drc_entry_slot->state = 1; /* DR entity present */
+    /* drc_entry_slot->state = 1; *//* DR entity present */
     g_warning("pci slot %x, index %x, state %x", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
