@@ -914,7 +914,7 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 {
     sPAPRPHBState *phb = SPAPR_PCI_HOST_BRIDGE(qdev);
     DrcEntry *drc_entry, *drc_entry_slot;
-/*     ConfigureConnectorState *ccs; */
+    ConfigureConnectorState *ccs;
     int slot = PCI_SLOT(dev->devfn);
     void *fdt;
     char nodename[512];
@@ -1040,16 +1040,11 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
     /* hold on to the node, configure_connector will pass it to the guest
      * later
      */
-/* NB: configure_connector is not getting called in the hotplug path
+/* NB: configure_connector is not getting called in the hotplug path */
     ccs = &drc_entry_slot->cc_state;
     ccs->fdt = fdt;
     ccs->offset = offset;
     ccs->state = CC_STATE_PENDING;
-*/
-
-    if (!is_bridge) {
-        drc_entry_slot->fdt = fdt;
-    }
 
     return 0;
 }

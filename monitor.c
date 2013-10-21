@@ -2948,6 +2948,15 @@ static mon_cmd_t info_cmds[] = {
         .help       = "show the TPM device",
         .mhandler.cmd = hmp_info_tpm,
     },
+#if defined(TARGET_PPC)
+    {
+        .name       = "device_tree",
+        .args_type  = "",
+        .params     = "",
+        .help       = "print the open firmware device tree",
+        .mhandler.cmd = hmp_info_fdt,
+    },
+#endif
     {
         .name       = NULL,
     },

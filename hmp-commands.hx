@@ -1675,6 +1675,8 @@ show qdev device model list
 show roms
 @item info tpm
 show the TPM device
+@item info device_tree
+print the open firmware device tree
 @end table
 ETEXI
 

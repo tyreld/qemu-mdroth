@@ -713,6 +713,11 @@ void hmp_info_tpm(Monitor *mon, const QDict *qdict)
     qapi_free_TPMInfoList(info_list);
 }
 
+void hmp_info_fdt(Monitor *mon, const QDict *qdict)
+{
+    monitor_printf(mon, "hooked hmp_info_tpm\n");
+}
+
 void hmp_quit(Monitor *mon, const QDict *qdict)
 {
     monitor_suspend(mon);
