@@ -488,7 +488,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
         drc_entry = spapr_find_drc_entry(drc_index);
         if (!drc_entry) {
             g_warning("unable to find DRC entry for index %x", drc_index);
-            sensor_state = 1; /* present */
+            sensor_state = 2; /* unusable */
         } else {
             sensor_state = drc_entry->state;
         }
@@ -1425,7 +1425,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = 1; /* usable */
+        int_buf[i] = 2; /* unusable - this is what drmgr expects */
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,indicator-9003", int_buf,
@@ -1439,7 +1439,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = 0; /* usable - empty */
+        int_buf[i] = 2; /* unusable - drmgr will configure */
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,sensor-9003", int_buf,
