@@ -1990,6 +1990,16 @@ static void tlb_info(Monitor *mon, const QDict *qdict)
 }
 #endif
 
+#if defined(TARGET_PPC)
+#include "hw/ppc/spapr.h"
+static void fdt_info(Monitor *mon, const QDict *qdict)
+{
+    monitor_printf(mon, "hooked fdt_info\n");
+    print_fdt(spapr->fdt, 0, 0);
+}
+#endif
+
+
 static void do_info_mtree(Monitor *mon, const QDict *qdict)
 {
     mtree_info((fprintf_function)monitor_printf, mon);
@@ -2954,7 +2964,7 @@ static mon_cmd_t info_cmds[] = {
         .args_type  = "",
         .params     = "",
         .help       = "print the open firmware device tree",
-        .mhandler.cmd = hmp_info_fdt,
+        .mhandler.cmd = fdt_info,
     },
 #endif
     {

@@ -539,7 +539,7 @@ static void print_fdt_prop(void *fdt, int offset)
 }
 
 /* XXX: temporary code for debugging */
-static void print_fdt(void *fdt, int offset, int depth)
+void print_fdt(void *fdt, int offset, int depth)
 {
     int next_offset = offset;
     int tag;

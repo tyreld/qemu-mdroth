@@ -431,4 +431,5 @@ DrcEntry *spapr_find_drc_entry(int drc_index);
 void spapr_pci_hotplug_add(DeviceState *qdev, int slot);
 void spapr_pci_hotplug_remove(DeviceState *qdev, int slot);
 void spapr_load_phb_node(DrcEntry *drc_entry);
+void print_fdt(void *fdt, int offset, int depth);
 #endif /* !defined (__HW_SPAPR_H__) */
