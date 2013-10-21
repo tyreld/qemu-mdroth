@@ -431,6 +431,9 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     case 9001: /* Isolation state */
     case 9003: /* Allocation State */
         if (drc_entry) {
+            g_warning("rtas_set_indicator: drc_entry %p index %x" \
+                      "state set to %x",
+                      drc_entry, drc_index, indicator_state);
             drc_entry->state = indicator_state;
         }
         break;
@@ -488,7 +491,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
         drc_entry = spapr_find_drc_entry(drc_index);
         if (!drc_entry) {
             g_warning("unable to find DRC entry for index %x", drc_index);
-            sensor_state = 2; /* unusable */
+            sensor_state = 0; /* empty */
         } else {
             sensor_state = drc_entry->state;
         }
@@ -501,6 +504,9 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
 }
 
 /* XXX: temporary code for debugging */
+/* TODO: now that we use this code in a qmonitor command,
+ * make it better and find a home for it in the fdt code
+ */
 static void print_fdt_prop(void *fdt, int offset)
 {
     const struct fdt_property *prop;
@@ -612,6 +618,9 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
      * use to index into the device's DT. so do we skip the device DT node
      * properties until that 2nd phase?
      */
+
+    /* TODO: make sure that ccs->fdt is added to spapr->fdt as a subnode
+     */
     drc_index = *(uint32_t *)wa_buf;
     drc_entry = spapr_find_drc_entry(drc_index);
     if (!drc_entry) {
@@ -628,7 +637,6 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         ccs->depth = 0;
         ccs->state = CC_STATE_ACTIVE;
         /* NB: detach fdt here and re-attach it to the slot? */
-
     }
 
 retry:
@@ -943,8 +951,12 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
         is_bridge = 0;
     }
 
-    /* NB: move this to PCI_HEADER_NORMAL block? */
-    drc_entry_slot->state = 2; /* DR entity unusable */
+    /* NB: move this to PCI_HEADER_NORMAL block below?
+     * drmgr -c pci expects the slot to be "present"
+     * now that we have added a device to it.
+     */
+    drc_entry->state = 1; /* DR entity present */
+    drc_entry_slot->state = 1; /* and the slot */
     g_warning("pci slot %x, index %x, state %x", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state);
@@ -1423,8 +1435,13 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     memset(int_buf, 0, sizeof(int_buf));
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
+/* assume that we will support drmgr -c pci
+ * in that case we want the initial indicator state to be 0 - "empty"
+ * when we hot-plug an adaptor in the slot we need to set the indicator
+ * to 1 - "present."
+ */
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = 2; /* unusable - this is what drmgr expects */
+        int_buf[i] = 0;
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,indicator-9003", int_buf,
@@ -1438,7 +1455,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
-        int_buf[i] = 2; /* unusable - drmgr will configure */
+        int_buf[i] = 0; /* empty - drmgr will configure with the -c pci option*/
     }
 
     ret = fdt_setprop(fdt, bus_off, "ibm,sensor-9003", int_buf,
