@@ -629,7 +629,7 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
     }
 
     ccs = &drc_entry->cc_state;
-    g_warning("ccs->state: %d", ccs->state);
+    g_warning("rtas_ibm_configure_connector: ccs->state: %d", ccs->state);
     if (ccs->state == CC_STATE_PENDING) {
         /* fdt should've been been attached to drc_entry during realize/hotplug */
         g_assert(ccs->fdt);
@@ -647,7 +647,8 @@ retry:
     case FDT_BEGIN_NODE:
         ccs->depth++;
         node_name = fdt_get_name(ccs->fdt, ccs->offset, &node_name_len);
-        g_warning("node_name_len: %d", node_name_len);
+        g_warning("rtas_ibm_configure_connector: node_name_len: %d",
+                  node_name_len);
         g_warning("node_name: %s", node_name);
         g_warning("node depth: %d", ccs->depth);
         wa_buf_int[CC_IDX_NODE_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
@@ -658,6 +659,10 @@ retry:
         ccs->depth--;
         if (ccs->depth == 0) {
             /* reached the end of top-level node, declare success */
+            g_warning("rtas_ibm_configure_connector: end node.");
+            /* TODO: here is where we _may_ need to ad the ccs->fdt
+             * to spapr->fdt.
+            */
             ccs->state = CC_STATE_PENDING;
             rc = CC_RET_SUCCESS;
         } else {
@@ -667,18 +672,19 @@ retry:
     case FDT_PROP:
         prop = fdt_get_property_by_offset(ccs->fdt, ccs->offset, &prop_len);
         prop_name = fdt_string(ccs->fdt, fdt32_to_cpu(prop->nameoff));
-        g_warning("prop_name: %s, prop_len: %d", prop_name, prop_len);
+        g_warning("rtas_ibm_configure_connector: prop_name: %s, prop_len: %d",
+                  prop_name, prop_len);
         wa_buf_int[CC_IDX_PROP_NAME_OFFSET] = CC_VAL_DATA_OFFSET;
         wa_buf_int[CC_IDX_PROP_LEN] = prop_len;
         wa_buf_int[CC_IDX_PROP_DATA_OFFSET] =
             CC_VAL_DATA_OFFSET + strlen(prop_name) + 1;
-
         strcpy(wa_buf + wa_buf_int[CC_IDX_PROP_NAME_OFFSET], prop_name);
         memcpy(wa_buf + wa_buf_int[CC_IDX_PROP_DATA_OFFSET],
                prop->data, prop_len);
         rc = CC_RET_NEXT_PROPERTY;
         break;
     case FDT_END:
+        g_warning("rtas_ibm_configure_connector: end FDT");
         rc = CC_RET_ERROR;
         break;
     default:
@@ -1439,6 +1445,8 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
  * in that case we want the initial indicator state to be 0 - "empty"
  * when we hot-plug an adaptor in the slot we need to set the indicator
  * to 1 - "present."
+ *
+ *  TODO: This for loop is now completely unecesary
  */
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
         int_buf[i] = 0;
@@ -1454,6 +1462,7 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
     memset(int_buf, 0, sizeof(int_buf));
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
 
+    /* TODO: this for loop is now completely unecesary */
     for (i = 1; i <= SPAPR_DRC_PHB_SLOT_MAX; i++) {
         int_buf[i] = 0; /* empty - drmgr will configure with the -c pci option*/
     }
