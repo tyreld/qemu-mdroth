@@ -407,6 +407,37 @@ typedef struct ConfigureConnectorState {
     } state;
 } ConfigureConnectorState;
 
+/* the state field needs to support multiple index values */
+
+#define INDICATOR_ISOLATION_MASK            0x0001   /* 9001 one bit */
+#define INDICATOR_GLOBAL_INTERRUPT_MASK     0x0002   /* 9005 one bit */
+#define INDICATOR_ERROR_LOG_MASK            0x0004   /* 9006 one bit */
+#define INDICATOR_IDENTIFY_MASK             0x0008   /* 9007 one bit */
+#define INDICATOR_RESET_MASK                0x0010   /* 9009 one bit */
+#define INDICATOR_DR_MASK                   0x00e0   /* 9002 three bits */
+#define INDICATOR_ALLOCATION_MASK           0x0300   /* 9003 two bits */
+#define INDICATOR_EPOW_MASK                 0x1c00   /* 9 three bits */
+#define SENSOR_ENTITY_SENSE_MASK            0xe000   /* 9003 three bits */
+
+#define INDICATOR_ISOLATION_SHIFT           0x00     /* bit 0 */
+#define INDICATOR_GLOBAL_INTERRUPT_SHIFT    0x01     /* bit 1 */
+#define INDICATOR_ERROR_LOG_SHIFT           0x02     /* bit 2 */
+#define INDICATOR_IDENTIFY_SHIFT            0x03     /* bit 3 */
+#define INDICATOR_RESET_SHIFT               0x04     /* bit 4 */
+#define INDICATOR_DR_SHIFT                  0x05     /* bits 5-7 */
+#define INDICATOR_ALLOCATION_SHIFT          0x08     /* bits 8-9 */
+#define INDICATOR_EPOW_SHIFT                0x0a     /* bits 10-12 */
+#define SENSOR_ENTITY_SENSE_SHIFT           0x0d     /* bits 13-15 */
+
+#define DECODE_DRC_STATE(state, m, s)                  \
+    ((((uint32_t)(state) & (uint32_t)(m))) >> (s))
+
+#define ENCODE_DRC_STATE(val, m, s) \
+    (((uint32_t)(val) & (uint32_t)(m)) << (s))
+
+#define EPOW_NORMAL 11
+#define DR_ENTITY_SENSE_PRESENT 1
+
 typedef struct DrcEntry DrcEntry;
 
 struct DrcEntry {
