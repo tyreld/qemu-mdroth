@@ -424,8 +424,8 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t encoded = 0, shift = 0, mask = 0;
     DrcEntry *drc_entry = NULL;
 
-    g_warning("rtas_set_indicator: drc_entry %p @ index: %x",
-              drc_entry, drc_index);
+    g_warning("rtas_set_indicator: indicator %d: drc_entry %p @ index: %x",
+              indicator, drc_entry, drc_index);
 
     drc_entry = spapr_find_drc_entry(drc_index);
     if (!drc_entry) {
@@ -476,12 +476,12 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
         return;
     }
 
-    g_warning("rtas_set_indicator: drc_entry %p index %x"   \
+    g_warning("rtas_set_indicator: indicator %d: drc_entry %p index %x"   \
               "state set to %x",
-              drc_entry, drc_index, indicator_state);
+              indicator, drc_entry, drc_index, indicator_state);
     encoded = ENCODE_DRC_STATE(indicator_state, mask, shift);
-    g_warning("rtas_set_indicator: encoded value of %d: %x",
-             indicator_state, encoded);
+    g_warning("rtas_set_indicator: indicator %d: encoded value of %d: %x",
+              indicator, indicator_state, encoded);
     drc_entry->state &= encoded;
     rtas_st(rets, 0, 0);
 }
