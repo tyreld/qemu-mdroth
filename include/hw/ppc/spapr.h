@@ -433,7 +433,7 @@ typedef struct ConfigureConnectorState {
     ((((uint32_t)(state) & (uint32_t)(m))) >> (s))
 
 #define ENCODE_DRC_STATE(val, m, s) \
-    (((uint32_t)(val) & (uint32_t)(m)) << (s))
+    (((uint32_t)(val) << (s)) & (uint32_t)(m))
 
 #define EPOW_NORMAL 11
 #define DR_ENTITY_SENSE_PRESENT 1
