@@ -482,7 +482,7 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     encoded = ENCODE_DRC_STATE(indicator_state, mask, shift);
     g_warning("rtas_set_indicator: indicator %d: encoded value of %d: %x",
               indicator, indicator_state, encoded);
-    drc_entry->state &= encoded;
+    drc_entry->state |= encoded;
     rtas_st(rets, 0, 0);
 }
 
@@ -1047,8 +1047,8 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
                                         SENSOR_ENTITY_SENSE_MASK,
                                         SENSOR_ENTITY_SENSE_SHIFT);
 
-    drc_entry->state &= encoded; /* DR entity present */
-    drc_entry_slot->state &= encoded; /* and the slot */
+    drc_entry->state |= encoded; /* DR entity present */
+    drc_entry_slot->state |= encoded; /* and the slot */
     g_warning("pci slot %x, index %x, state %x, encoded %x", slot,
               drc_entry_slot->drc_index,
               drc_entry_slot->state, encoded);
