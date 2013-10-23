@@ -1049,9 +1049,9 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
 
     drc_entry->state &= encoded; /* DR entity present */
     drc_entry_slot->state &= encoded; /* and the slot */
-    g_warning("pci slot %x, index %x, state %x", slot,
+    g_warning("pci slot %x, index %x, state %x, encoded %x", slot,
               drc_entry_slot->drc_index,
-              drc_entry_slot->state);
+              drc_entry_slot->state, encoded);
     /* find the offset for the new node in the slot fdt */
 
     sprintf(nodename, "pci@%d", slot);
