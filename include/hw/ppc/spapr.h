@@ -40,6 +40,8 @@ typedef struct sPAPREnvironment {
     int htab_save_index;
     bool htab_first_pass;
     int htab_fd;
+    /* platform state - sensors and indicators */
+    uint32_t state;
 } sPAPREnvironment;
 
 #define H_SUCCESS         0
@@ -437,7 +439,7 @@ typedef struct ConfigureConnectorState {
 
 #define EPOW_NORMAL 11
 #define DR_ENTITY_SENSE_PRESENT 1
-
+#define NO_SUCH_INDICATOR -3
 typedef struct DrcEntry DrcEntry;
 
 struct DrcEntry {

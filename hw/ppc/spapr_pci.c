@@ -422,17 +422,22 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     uint32_t drc_index = rtas_ld(args, 1);
     uint32_t indicator_state = rtas_ld(args, 2);
     uint32_t encoded = 0, shift = 0, mask = 0;
+    uint32_t *pind;
     DrcEntry *drc_entry = NULL;
 
     g_warning("rtas_set_indicator: indicator %d: drc_entry %p @ index: %x",
               indicator, drc_entry, drc_index);
-
-    drc_entry = spapr_find_drc_entry(drc_index);
-    if (!drc_entry) {
-        g_warning("rtas_set_indicator: unable to find drc_entry for %x",
-                  drc_index);
-        rtas_st(rets, 0, -3);
-        return;
+    if (drc_index == 0) { /* platform indicator */
+        pind = &spapr->state;
+    } else {
+        drc_entry = spapr_find_drc_entry(drc_index);
+        if (!drc_entry) {
+            g_warning("rtas_set_indicator: unable to find drc_entry for %x",
+                      drc_index);
+            rtas_st(rets, 0, NO_SUCH_INDICATOR);
+            return;
+        }
+        pind = &drc_entry->state;
     }
 
     switch (indicator) {
@@ -472,7 +477,7 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     default:
         g_warning("rtas_set_indicator: indicator not implemented: %d",
                   indicator);
-        rtas_st(rets, 0, -3);
+        rtas_st(rets, 0, NO_SUCH_INDICATOR);
         return;
     }
 
@@ -482,7 +487,10 @@ static void rtas_set_indicator(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     encoded = ENCODE_DRC_STATE(indicator_state, mask, shift);
     g_warning("rtas_set_indicator: indicator %d: encoded value of %d: %x",
               indicator, indicator_state, encoded);
-    drc_entry->state |= encoded;
+    /* clear the current indicator value */
+    *pind &= ~mask;
+    /* set the new value */
+    *pind |= encoded;
     rtas_st(rets, 0, 0);
 }
 
@@ -521,20 +529,25 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
 {
     uint32_t sensor = rtas_ld(args, 0);
     uint32_t drc_index = rtas_ld(args, 1);
-    uint32_t sensor_state = 0, ccode = -3, shift = 0, mask = 0;
+    uint32_t sensor_state = 0, decoded = 0, ccode = NO_SUCH_INDICATOR;
+    uint32_t shift = 0, mask = 0;
     DrcEntry *drc_entry = NULL;
 
     g_warning("rtas_get_sensor_state: sensor %d index %x", sensor, drc_index);
 
-    drc_entry = spapr_find_drc_entry(drc_index);
-    if (!drc_entry) {
-        g_warning("unable to find DRC entry for index %x", drc_index);
-        sensor_state = 0; /* empty */
-        /* ccode is already set to -3 */
-        rtas_st(rets, 0, ccode);
-        return;
+    if (drc_index == 0) {  /* platform state sensor/indicator */
+        sensor_state = spapr->state;
+    } else { /* we should have a drc entry */
+        drc_entry = spapr_find_drc_entry(drc_index);
+        if (!drc_entry) {
+            g_warning("unable to find DRC entry for index %x", drc_index);
+            sensor_state = 0; /* empty */
+            /* ccode is already set to -3 */
+            rtas_st(rets, 0, ccode);
+            return;
+        }
+        sensor_state = drc_entry->state;
     }
-
     switch (sensor) {
     case 9:  /* EPOW */
         shift = INDICATOR_EPOW_SHIFT;
@@ -576,9 +589,10 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
         return;
     }
 
-    sensor_state = DECODE_DRC_STATE(drc_entry->state, mask, shift);
-    g_warning("rtas_get_sensor_state: decoded: %x, state: %x",
-              sensor_state, drc_entry->state);
+    decoded = DECODE_DRC_STATE(sensor_state, mask, shift);
+    g_warning("rtas_get_sensor_state: sensor: %d, index: %x decoded: %x, " \
+              "state: %x",
+              sensor, drc_index, decoded, sensor_state);
     ccode = 0;
     rtas_st(rets, 0, ccode);
     rtas_st(rets, 1, sensor_state);
@@ -1047,7 +1061,9 @@ static int spapr_phb_add_pci_dt(DeviceState *qdev, PCIDevice *dev)
                                         SENSOR_ENTITY_SENSE_MASK,
                                         SENSOR_ENTITY_SENSE_SHIFT);
 
+    drc_entry->state &= ~(uint32_t)SENSOR_ENTITY_SENSE_MASK;
     drc_entry->state |= encoded; /* DR entity present */
+    drc_entry_slot->state &= ~(uint32_t)SENSOR_ENTITY_SENSE_MASK;
     drc_entry_slot->state |= encoded; /* and the slot */
     g_warning("pci slot %x, index %x, state %x, encoded %x", slot,
               drc_entry_slot->drc_index,
@@ -1336,6 +1352,15 @@ static int spapr_phb_init(SysBusDevice *s)
     /* Setup hotplug */
     pci_bus_hotplug(bus, spapr_device_hotplug, DEVICE(sphb));
 
+    /* make sure the platform EPOW sensor is initialized - the
+     * guest will probe it when there is a hotplug event.
+     */
+
+    spapr->state &= ~(uint32_t)INDICATOR_EPOW_MASK;
+    spapr->state |= ENCODE_DRC_STATE(0,
+                                     INDICATOR_EPOW_MASK,
+                                     INDICATOR_EPOW_SHIFT);
+
     return 0;
 }
 
@@ -1531,6 +1556,8 @@ static void spapr_create_drc_phb_dt_entries(void *fdt, int bus_off, int phb_inde
  * when we hot-plug an adaptor in the slot we need to set the indicator
  * to 1 - "present."
  */
+
+
     /* ibm,indicator-9003 */
     memset(int_buf, 0, sizeof(int_buf));
     int_buf[0] = SPAPR_DRC_PHB_SLOT_MAX;
