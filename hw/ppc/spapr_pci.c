@@ -595,7 +595,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
               sensor, drc_index, decoded, sensor_state);
     ccode = 0;
     rtas_st(rets, 0, ccode);
-    rtas_st(rets, 1, sensor_state);
+    rtas_st(rets, 1, decoded);
 }
 
 /* XXX: temporary code for debugging */
