@@ -579,7 +579,7 @@ static void rtas_get_sensor_state(PowerPCCPU *cpu, sPAPREnvironment *spapr,
     sensor_state = DECODE_DRC_STATE(drc_entry->state, mask, shift);
     g_warning("rtas_get_sensor_state: decoded: %x, state: %x",
               sensor_state, drc_entry->state);
-
+    ccode = 0;
     rtas_st(rets, 0, ccode);
     rtas_st(rets, 1, sensor_state);
 }
